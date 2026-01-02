@@ -1,0 +1,40 @@
+# Weather API Caching Proxy Config
+# Rename to config.yaml and fill in your details
+
+# Provider API keys
+openweather_api_key: "YOUR_OPENWEATHER_API_KEY"
+tomorrow_api_key: "YOUR_TOMORROW_API_KEY" # optional; if missing, OWM-only
+
+# Enable/disable providers (allows Tomorrow-only or OWM-only operation)
+enable_openweather: true
+enable_tomorrow: true
+
+# Preferred upstream units (we still normalize internally)
+units: "metric" # "metric" or "imperial"
+
+# List of locations to fetch weather for. Each can be city name, lat/lon, or OpenWeather location ID
+locations:
+  # By city name
+  - name: "Chicago,US"
+    type: "city"
+    query: "Chicago,US"
+  # By latitude/longitude
+  - name: "Eiffel Tower"
+    type: "latlon"
+    lat: 48.8584
+    lon: 2.2945
+
+# How often to refresh weather for each location (minutes)
+refresh_interval_minutes: 30
+
+# Per-provider max API calls in a 24h rolling window
+max_calls_per_24h_openweather: 900
+max_calls_per_24h_tomorrow: 500
+
+# Cache settings
+cache_dir: "./weather_cache"
+cache_expiry_minutes: 30
+
+# Server settings
+host: "0.0.0.0"
+port: 8080

@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Local config / secrets
+config.yaml
+.env
+.env.*
+
+# Runtime cache / data
+weather_cache/
+*.log
+
+# Editor/OS
+.vscode/
+.idea/
+.DS_Store
