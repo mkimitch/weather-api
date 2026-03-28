@@ -54,36 +54,40 @@ class WeatherScheduler:
     def scheduler_loop(self):
         """Background loop: fetch merged weather for each location at interval."""
         while True:
-            for loc in self.locations:
-                # We only gate on OpenWeather being available; Tomorrow is optional
-                if not self.can_make_api_call("openweather"):
-                    logger.warning(
-                        "OpenWeather API call limit reached, skipping fetch."
-                    )
-                    continue
-                # Optional: if Tomorrow present and also limited, we still fetch OWM-only.
-                if self.api_keys.get("tomorrow") and not self.can_make_api_call(
-                    "tomorrow"
-                ):
-                    logger.warning(
-                        "Tomorrow.io API call limit reached; merging OWM-only."
-                    )
+            try:
+                for loc in self.locations:
+                    # We only gate on OpenWeather being available; Tomorrow is optional
+                    if not self.can_make_api_call("openweather"):
+                        logger.warning(
+                            "OpenWeather API call limit reached, skipping fetch."
+                        )
+                        continue
+                    # Optional: if Tomorrow present and also limited, we still fetch OWM-only.
+                    if self.api_keys.get("tomorrow") and not self.can_make_api_call(
+                        "tomorrow"
+                    ):
+                        logger.warning(
+                            "Tomorrow.io API call limit reached; merging OWM-only."
+                        )
 
-                try:
-                    merged = get_weather_for_location(loc, self.config)
-                    # Count calls: one for OWM always; one for Tomorrow if API key present
-                    self.record_api_call("openweather")
-                    if self.api_keys.get("tomorrow"):
-                        self.record_api_call("tomorrow")
-                    logger.info(
-                        f"Fetched and cached weather for {loc['name']} (updatedAt={merged.get('updatedAt')})"
-                    )
-                except RateLimitExceeded:
-                    logger.warning("Rate limit exceeded; skipping cycle.")
-                except Exception as e:
-                    logger.error(f"Error fetching weather for {loc['name']}: {e}")
+                    try:
+                        merged = get_weather_for_location(loc, self.config)
+                        # Count calls: one for OWM always; one for Tomorrow if API key present
+                        self.record_api_call("openweather")
+                        if self.api_keys.get("tomorrow"):
+                            self.record_api_call("tomorrow")
+                        logger.info(
+                            f"Fetched and cached weather for {loc['name']} (updatedAt={merged.get('updatedAt')})"
+                        )
+                    except RateLimitExceeded:
+                        logger.warning("Rate limit exceeded; skipping cycle.")
+                    except Exception as e:
+                        logger.error(f"Error fetching weather for {loc['name']}: {e}")
 
-            time.sleep(self.refresh_interval * 60)
+                time.sleep(self.refresh_interval * 60)
+            except Exception as e:
+                logger.error(f"Scheduler loop error: {e}")
+                time.sleep(60)
 
     def start(self):
         thread = threading.Thread(target=self.scheduler_loop, daemon=True)
