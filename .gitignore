@@ -10,12 +10,12 @@ env/
 ENV/
 
 # Local config / secrets
-config.yaml
+xxxconfig.yaml
 .env
 .env.*
 
 # Runtime cache / data
-weather_cache/
+xxxweather_cache/
 *.log
 
 # Editor/OS
