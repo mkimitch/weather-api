@@ -10,15 +10,36 @@ env/
 ENV/
 
 # Local config / secrets
-xxxconfig.yaml
 .env
 .env.*
+.env.*.local
+.env.development.local
+.env.local
+.env.production.local
+.env.test.local
+xxxconfig.yaml
 
 # Runtime cache / data
 xxxweather_cache/
 *.log
 
+# AI-powered IDEs (directories only, not config files)
+.cursor/
+.windsurf/
+.cascade/
+.codeium/
+
 # Editor/OS
 .vscode/
 .idea/
 .DS_Store
+
+# Temporary files
+*.tmp
+*.temp
+*.diff
+.cache/
+.temp/
+
+# Private Files
+private/
