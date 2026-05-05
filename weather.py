@@ -135,8 +135,8 @@ def kph_from_ms(ms: Optional[float]) -> Optional[float]:
     return None if ms is None else round(ms * 3.6, 2)
 
 
-def to_iso(ts: Optional[int or str]) -> Optional[str]:
-    if ts is None:
+def to_iso(ts: Optional[int or str], *, zero_as_none: bool = False) -> Optional[str]:
+    if ts is None or (zero_as_none and ts == 0):
         return None
     if isinstance(ts, (int, float)):
         return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
@@ -227,10 +227,10 @@ def normalize_openweather(raw: Dict[str, Any]) -> Dict[str, Any]:
             "date": (
                 datetime.fromtimestamp(d.get("dt", 0), tz=timezone.utc).isoformat()
             )[:10],
-            "sunrise": to_iso(d.get("sunrise")),
-            "sunset": to_iso(d.get("sunset")),
-            "moonrise": to_iso(d.get("moonrise")),
-            "moonset": to_iso(d.get("moonset")),
+            "sunrise": to_iso(d.get("sunrise"), zero_as_none=True),
+            "sunset": to_iso(d.get("sunset"), zero_as_none=True),
+            "moonrise": to_iso(d.get("moonrise"), zero_as_none=True),
+            "moonset": to_iso(d.get("moonset"), zero_as_none=True),
             "moonPhase": d.get("moon_phase"),
             "tempC": {
                 "min": (d.get("temp") or {}).get("min"),
