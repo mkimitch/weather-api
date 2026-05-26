@@ -92,6 +92,8 @@ def fetch_tomorrow(
         "uvIndex",
         "cloudCover",
         "precipitationProbability",
+        "precipitationProbabilityAvg",
+        "precipitationProbabilityMax",
         "rainIntensity",
         "snowIntensity",
         "sleetIntensity",
@@ -154,6 +156,34 @@ def mm_from_owm_precip(obj: Optional[Dict[str, Any]]) -> float:
     return float(obj.get("1h") or obj.get("3h") or 0.0)
 
 
+def _clamp_probability(value: float) -> float:
+    return max(0.0, min(value, 1.0))
+
+
+def pop_from_unit_interval(value: Optional[float]) -> Optional[float]:
+    if value is None:
+        return None
+    return _clamp_probability(float(value))
+
+
+def pop_from_percent(value: Optional[float]) -> Optional[float]:
+    if value is None:
+        return None
+    return _clamp_probability(float(value) / 100.0)
+
+
+def pop_from_tomorrow_daily(values: Dict[str, Any]) -> Optional[float]:
+    for field in (
+        "precipitationProbabilityAvg",
+        "precipitationProbability",
+        "precipitationProbabilityMax",
+    ):
+        pop = pop_from_percent(values.get(field))
+        if pop is not None:
+            return pop
+    return None
+
+
 # ----------------------------
 # Normalize: OpenWeather → uni
 # ----------------------------
@@ -209,7 +239,7 @@ def normalize_openweather(raw: Dict[str, Any]) -> Dict[str, Any]:
                 "time": to_iso(h.get("dt")),
                 "tempC": h.get("temp"),
                 "feelsLikeC": h.get("feels_like"),
-                "pop": h.get("pop"),
+                "pop": pop_from_unit_interval(h.get("pop")),
                 "precipMm": mm_from_owm_precip(h.get("rain"))
                 + mm_from_owm_precip(h.get("snow")),
                 "windKph": kph_from_ms(h.get("wind_speed")),
@@ -240,7 +270,7 @@ def normalize_openweather(raw: Dict[str, Any]) -> Dict[str, Any]:
                 "morn": (d.get("temp") or {}).get("morn"),
                 "eve": (d.get("temp") or {}).get("eve"),
             },
-            "pop": d.get("pop"),
+            "pop": pop_from_unit_interval(d.get("pop")),
             "precipMm": float(d.get("rain") or 0) + float(d.get("snow") or 0),
             "windKph": kph_from_ms(d.get("wind_speed")),
             "windGustKph": kph_from_ms(d.get("wind_gust")),
@@ -348,11 +378,7 @@ def normalize_tomorrow(raw: Dict[str, Any]) -> Dict[str, Any]:
             "precipMmHr": float(cv.get("rainIntensity") or 0)
             + float(cv.get("snowIntensity") or 0)
             + float(cv.get("sleetIntensity") or 0),
-            "pop": (
-                (cv.get("precipitationProbability") / 100.0)
-                if cv.get("precipitationProbability") is not None
-                else None
-            ),
+            "pop": pop_from_percent(cv.get("precipitationProbability")),
             "condition": {"code": cv.get("weatherCode")},
             "extra": {
                 "rainIntensity": cv.get("rainIntensity"),
@@ -370,11 +396,7 @@ def normalize_tomorrow(raw: Dict[str, Any]) -> Dict[str, Any]:
                 "time": to_iso(h.get("startTime")),
                 "tempC": v.get("temperature"),
                 "feelsLikeC": v.get("temperatureApparent"),
-                "pop": (
-                    (v.get("precipitationProbability") / 100.0)
-                    if v.get("precipitationProbability") is not None
-                    else None
-                ),
+                "pop": pop_from_percent(v.get("precipitationProbability")),
                 "precipMm": float(v.get("rainIntensity") or 0)
                 + float(v.get("snowIntensity") or 0)
                 + float(v.get("sleetIntensity") or 0),
@@ -397,11 +419,7 @@ def normalize_tomorrow(raw: Dict[str, Any]) -> Dict[str, Any]:
                     "min": v.get("temperatureMin", v.get("temperature")),
                     "max": v.get("temperatureMax", v.get("temperature")),
                 },
-                "pop": (
-                    (v.get("precipitationProbability") / 100.0)
-                    if v.get("precipitationProbability") is not None
-                    else None
-                ),
+                "pop": pop_from_tomorrow_daily(v),
                 "precipMm": float(v.get("rainIntensity") or 0)
                 + float(v.get("snowIntensity") or 0)
                 + float(v.get("sleetIntensity") or 0),
