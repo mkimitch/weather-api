@@ -1,0 +1,610 @@
+{
+  "evidence": {
+    "kind": "current provider responses captured 2026-09-19; not September 2 evidence",
+    "timezone": "America/Chicago",
+    "tomorrowRequest": {
+      "endTime": "nowPlus5d",
+      "timezone": "America/Chicago",
+      "dailyStartHour": 0,
+      "units": "metric"
+    }
+  },
+  "openweather": {
+    "timezone": "America/Chicago",
+    "timezone_offset": -18000,
+    "current": {
+      "dt": 1789833306,
+      "sunrise": 1789818968,
+      "sunset": 1789863399,
+      "temp": 14.76,
+      "feels_like": 14.85,
+      "pressure": 1014,
+      "humidity": 98,
+      "dew_point": 14.45,
+      "uvi": 0.24,
+      "clouds": 100,
+      "visibility": 10000,
+      "wind_speed": 3.6,
+      "wind_deg": 70,
+      "weather": [
+        {
+          "id": 500,
+          "main": "Rain",
+          "description": "light rain",
+          "icon": "10d"
+        }
+      ],
+      "rain": {
+        "1h": 0.18
+      }
+    },
+    "daily": [
+      {
+        "dt": 1789840800,
+        "sunrise": 1789818968,
+        "sunset": 1789863399,
+        "moonrise": 1789851420,
+        "moonset": 0,
+        "moon_phase": 0.28,
+        "summary": "Expect a day of partly cloudy with rain",
+        "temp": {
+          "day": 14.88,
+          "min": 14.01,
+          "max": 15.59,
+          "night": 14.94,
+          "eve": 14.79,
+          "morn": 14.23
+        },
+        "feels_like": {
+          "day": 14.88,
+          "night": 14.89,
+          "eve": 14.7,
+          "morn": 14.22
+        },
+        "pressure": 1014,
+        "humidity": 94,
+        "dew_point": 13.92,
+        "wind_speed": 5.64,
+        "wind_deg": 86,
+        "wind_gust": 10.19,
+        "weather": [
+          {
+            "id": 501,
+            "main": "Rain",
+            "description": "moderate rain",
+            "icon": "10d"
+          }
+        ],
+        "clouds": 100,
+        "pop": 1,
+        "rain": 3.14,
+        "uvi": 0.5
+      },
+      {
+        "dt": 1789927200,
+        "sunrise": 1789905438,
+        "sunset": 1789949684,
+        "moonrise": 1789940040,
+        "moonset": 1789880940,
+        "moon_phase": 0.31,
+        "summary": "Expect a day of partly cloudy with clear spells",
+        "temp": {
+          "day": 17.55,
+          "min": 11.82,
+          "max": 18.81,
+          "night": 13.91,
+          "eve": 16.21,
+          "morn": 11.82
+        },
+        "feels_like": {
+          "day": 17.14,
+          "night": 13.21,
+          "eve": 15.71,
+          "morn": 11.41
+        },
+        "pressure": 1021,
+        "humidity": 68,
+        "dew_point": 12.86,
+        "wind_speed": 4.84,
+        "wind_deg": 64,
+        "wind_gust": 9.91,
+        "weather": [
+          {
+            "id": 804,
+            "main": "Clouds",
+            "description": "overcast clouds",
+            "icon": "04d"
+          }
+        ],
+        "clouds": 100,
+        "pop": 0.23,
+        "uvi": 5.03
+      },
+      {
+        "dt": 1790013600,
+        "sunrise": 1789991908,
+        "sunset": 1790035970,
+        "moonrise": 1790028300,
+        "moonset": 1789971240,
+        "moon_phase": 0.34,
+        "summary": "There will be partly cloudy today",
+        "temp": {
+          "day": 15.2,
+          "min": 10.17,
+          "max": 15.76,
+          "night": 11.27,
+          "eve": 13.91,
+          "morn": 10.17
+        },
+        "feels_like": {
+          "day": 14.34,
+          "night": 10.65,
+          "eve": 13.21,
+          "morn": 9.51
+        },
+        "pressure": 1026,
+        "humidity": 60,
+        "dew_point": 7.54,
+        "wind_speed": 4.02,
+        "wind_deg": 66,
+        "wind_gust": 7.21,
+        "weather": [
+          {
+            "id": 804,
+            "main": "Clouds",
+            "description": "overcast clouds",
+            "icon": "04d"
+          }
+        ],
+        "clouds": 94,
+        "pop": 0,
+        "uvi": 4.27
+      },
+      {
+        "dt": 1790100000,
+        "sunrise": 1790078379,
+        "sunset": 1790122256,
+        "moonrise": 1790116260,
+        "moonset": 1790061660,
+        "moon_phase": 0.37,
+        "summary": "Expect a day of partly cloudy with clear spells",
+        "temp": {
+          "day": 15.1,
+          "min": 7.53,
+          "max": 15.98,
+          "night": 10.93,
+          "eve": 13.27,
+          "morn": 7.53
+        },
+        "feels_like": {
+          "day": 14.21,
+          "night": 10.12,
+          "eve": 12.45,
+          "morn": 6
+        },
+        "pressure": 1030,
+        "humidity": 59,
+        "dew_point": 7.14,
+        "wind_speed": 3.4,
+        "wind_deg": 89,
+        "wind_gust": 7.84,
+        "weather": [
+          {
+            "id": 800,
+            "main": "Clear",
+            "description": "clear sky",
+            "icon": "01d"
+          }
+        ],
+        "clouds": 1,
+        "pop": 0,
+        "uvi": 5.11
+      },
+      {
+        "dt": 1790186400,
+        "sunrise": 1790164849,
+        "sunset": 1790208542,
+        "moonrise": 1790203920,
+        "moonset": 1790152200,
+        "moon_phase": 0.4,
+        "summary": "Expect a day of partly cloudy with clear spells",
+        "temp": {
+          "day": 16.04,
+          "min": 6.6,
+          "max": 16.73,
+          "night": 10.52,
+          "eve": 13.42,
+          "morn": 6.6
+        },
+        "feels_like": {
+          "day": 15.11,
+          "night": 9.82,
+          "eve": 12.67,
+          "morn": 4.79
+        },
+        "pressure": 1030,
+        "humidity": 54,
+        "dew_point": 6.8,
+        "wind_speed": 3.88,
+        "wind_deg": 134,
+        "wind_gust": 8.47,
+        "weather": [
+          {
+            "id": 804,
+            "main": "Clouds",
+            "description": "overcast clouds",
+            "icon": "04d"
+          }
+        ],
+        "clouds": 89,
+        "pop": 0,
+        "uvi": 6
+      },
+      {
+        "dt": 1790272800,
+        "sunrise": 1790251319,
+        "sunset": 1790294828,
+        "moonrise": 1790291460,
+        "moonset": 1790242740,
+        "moon_phase": 0.43,
+        "summary": "Expect a day of partly cloudy with rain",
+        "temp": {
+          "day": 17.06,
+          "min": 9.47,
+          "max": 17.16,
+          "night": 14.76,
+          "eve": 16.08,
+          "morn": 11.27
+        },
+        "feels_like": {
+          "day": 16.6,
+          "night": 14.54,
+          "eve": 15.88,
+          "morn": 10.8
+        },
+        "pressure": 1025,
+        "humidity": 68,
+        "dew_point": 11.18,
+        "wind_speed": 4.08,
+        "wind_deg": 165,
+        "wind_gust": 8.46,
+        "weather": [
+          {
+            "id": 500,
+            "main": "Rain",
+            "description": "light rain",
+            "icon": "10d"
+          }
+        ],
+        "clouds": 98,
+        "pop": 0.27,
+        "rain": 1.14,
+        "uvi": 6
+      },
+      {
+        "dt": 1790359200,
+        "sunrise": 1790337790,
+        "sunset": 1790381114,
+        "moonrise": 1790379000,
+        "moonset": 1790333340,
+        "moon_phase": 0.47,
+        "summary": "Expect a day of partly cloudy with rain",
+        "temp": {
+          "day": 18.89,
+          "min": 13.03,
+          "max": 19.74,
+          "night": 16.22,
+          "eve": 18.1,
+          "morn": 13.63
+        },
+        "feels_like": {
+          "day": 18.74,
+          "night": 16.04,
+          "eve": 17.95,
+          "morn": 13.37
+        },
+        "pressure": 1024,
+        "humidity": 73,
+        "dew_point": 13.89,
+        "wind_speed": 3.07,
+        "wind_deg": 101,
+        "wind_gust": 4.12,
+        "weather": [
+          {
+            "id": 500,
+            "main": "Rain",
+            "description": "light rain",
+            "icon": "10d"
+          }
+        ],
+        "clouds": 95,
+        "pop": 0.2,
+        "rain": 0.18,
+        "uvi": 6
+      },
+      {
+        "dt": 1790445600,
+        "sunrise": 1790424261,
+        "sunset": 1790467400,
+        "moonrise": 1790466540,
+        "moonset": 1790424060,
+        "moon_phase": 0.5,
+        "summary": "There will be partly cloudy today",
+        "temp": {
+          "day": 22.7,
+          "min": 13.51,
+          "max": 23.05,
+          "night": 19.55,
+          "eve": 19.93,
+          "morn": 13.92
+        },
+        "feels_like": {
+          "day": 22.31,
+          "night": 18.92,
+          "eve": 19.41,
+          "morn": 13.64
+        },
+        "pressure": 1025,
+        "humidity": 49,
+        "dew_point": 11.32,
+        "wind_speed": 2.87,
+        "wind_deg": 130,
+        "wind_gust": 3.82,
+        "weather": [
+          {
+            "id": 803,
+            "main": "Clouds",
+            "description": "broken clouds",
+            "icon": "04d"
+          }
+        ],
+        "clouds": 63,
+        "pop": 0,
+        "uvi": 6
+      }
+    ]
+  },
+  "tomorrow": {
+    "data": {
+      "timelines": [
+        {
+          "timestep": "1d",
+          "endTime": "2026-09-24T00:00:00-05:00",
+          "startTime": "2026-09-19T00:00:00-05:00",
+          "intervals": [
+            {
+              "startTime": "2026-09-19T00:00:00-05:00",
+              "values": {
+                "cloudCover": 100,
+                "dewPoint": 14.8,
+                "humidity": 97,
+                "precipitationProbability": 74,
+                "precipitationProbabilityAvg": 9.5,
+                "precipitationProbabilityMax": 74,
+                "pressureSurfaceLevel": 983.93,
+                "rainIntensity": 2.2,
+                "rainIntensityAvg": 0.31,
+                "sleetIntensity": 0,
+                "sleetIntensityAvg": 0,
+                "snowIntensity": 0,
+                "snowIntensityAvg": 0,
+                "temperature": 15.61,
+                "temperatureApparent": 15.6,
+                "temperatureMax": 15.61,
+                "temperatureMin": 13.67,
+                "uvIndex": 1,
+                "visibility": 16,
+                "weatherCode": 1001,
+                "windDirection": 94,
+                "windGust": 9.6,
+                "windSpeed": 5.4
+              }
+            },
+            {
+              "startTime": "2026-09-20T00:00:00-05:00",
+              "values": {
+                "cloudCover": 100,
+                "dewPoint": 14.3,
+                "humidity": 94,
+                "precipitationProbability": 0,
+                "precipitationProbabilityAvg": 0,
+                "precipitationProbabilityMax": 0,
+                "pressureSurfaceLevel": 991.21,
+                "rainIntensity": 0,
+                "rainIntensityAvg": 0,
+                "sleetIntensity": 0,
+                "sleetIntensityAvg": 0,
+                "snowIntensity": 0,
+                "snowIntensityAvg": 0,
+                "temperature": 19.08,
+                "temperatureApparent": 19.1,
+                "temperatureMax": 19.08,
+                "temperatureMin": 12.44,
+                "uvIndex": 5,
+                "visibility": 16,
+                "weatherCode": 1001,
+                "windDirection": 55,
+                "windGust": 10.5,
+                "windSpeed": 6.3
+              }
+            },
+            {
+              "startTime": "2026-09-21T00:00:00-05:00",
+              "values": {
+                "cloudCover": 100,
+                "dewPoint": 10.1,
+                "humidity": 87,
+                "precipitationProbability": 0,
+                "precipitationProbabilityAvg": 0,
+                "precipitationProbabilityMax": 0,
+                "pressureSurfaceLevel": 992.56,
+                "rainIntensity": 0,
+                "rainIntensityAvg": 0,
+                "sleetIntensity": 0,
+                "sleetIntensityAvg": 0,
+                "snowIntensity": 0,
+                "snowIntensityAvg": 0,
+                "temperature": 15.77,
+                "temperatureApparent": 15.8,
+                "temperatureMax": 15.77,
+                "temperatureMin": 10.15,
+                "uvIndex": 4,
+                "visibility": 16,
+                "weatherCode": 1001,
+                "windDirection": 79,
+                "windGust": 9.5,
+                "windSpeed": 4
+              }
+            },
+            {
+              "startTime": "2026-09-22T00:00:00-05:00",
+              "values": {
+                "cloudCover": 60.94,
+                "dewPoint": 8,
+                "humidity": 93,
+                "precipitationProbability": 0,
+                "precipitationProbabilityAvg": 0,
+                "precipitationProbabilityMax": 0,
+                "pressureSurfaceLevel": 995.68,
+                "rainIntensity": 0,
+                "rainIntensityAvg": 0,
+                "sleetIntensity": 0,
+                "sleetIntensityAvg": 0,
+                "snowIntensity": 0,
+                "snowIntensityAvg": 0,
+                "temperature": 16,
+                "temperatureApparent": 16,
+                "temperatureMax": 16,
+                "temperatureMin": 7.27,
+                "uvIndex": 5,
+                "visibility": 16,
+                "weatherCode": 1000,
+                "windDirection": 98,
+                "windGust": 8.1,
+                "windSpeed": 3.8
+              }
+            },
+            {
+              "startTime": "2026-09-23T00:00:00-05:00",
+              "values": {
+                "cloudCover": 100,
+                "dewPoint": 9.1,
+                "humidity": 95,
+                "precipitationProbability": 5,
+                "precipitationProbabilityAvg": 0.6,
+                "precipitationProbabilityMax": 5,
+                "pressureSurfaceLevel": 994.52,
+                "rainIntensity": 0.04,
+                "rainIntensityAvg": 0,
+                "sleetIntensity": 0,
+                "sleetIntensityAvg": 0,
+                "snowIntensity": 0,
+                "snowIntensityAvg": 0,
+                "temperature": 15.88,
+                "temperatureApparent": 15.9,
+                "temperatureMax": 15.88,
+                "temperatureMin": 7.68,
+                "uvIndex": 4,
+                "visibility": 16,
+                "weatherCode": 1001,
+                "windDirection": 136,
+                "windGust": 7.4,
+                "windSpeed": 3.8
+              }
+            },
+            {
+              "startTime": "2026-09-24T00:00:00-05:00",
+              "values": {
+                "cloudCover": 100,
+                "dewPoint": 13.6,
+                "humidity": 96,
+                "precipitationProbability": 40,
+                "precipitationProbabilityAvg": 21.3,
+                "precipitationProbabilityMax": 40,
+                "pressureSurfaceLevel": 990.53,
+                "rainIntensity": 0.22,
+                "rainIntensityAvg": 0.1,
+                "sleetIntensity": 0,
+                "sleetIntensityAvg": 0,
+                "snowIntensity": 0,
+                "snowIntensityAvg": 0,
+                "temperature": 16.57,
+                "temperatureApparent": 16.6,
+                "temperatureMax": 16.57,
+                "temperatureMin": 10.5,
+                "visibility": 16,
+                "weatherCode": 1001,
+                "windDirection": 154,
+                "windGust": 9,
+                "windSpeed": 4.7
+              }
+            }
+          ]
+        },
+        {
+          "timestep": "1h",
+          "endTime": "2026-09-24T10:00:00-05:00",
+          "startTime": "2026-09-19T10:00:00-05:00",
+          "intervals": [
+            {
+              "startTime": "2026-09-19T10:00:00-05:00",
+              "values": {
+                "cloudCover": 86.31,
+                "dewPoint": 14,
+                "humidity": 96,
+                "precipitationProbability": 5,
+                "precipitationProbabilityAvg": 5,
+                "precipitationProbabilityMax": 5,
+                "pressureSurfaceLevel": 982.12,
+                "rainIntensity": 0.8,
+                "rainIntensityAvg": 0.8,
+                "sleetIntensity": 0,
+                "sleetIntensityAvg": 0,
+                "snowIntensity": 0,
+                "snowIntensityAvg": 0,
+                "temperature": 14.66,
+                "temperatureApparent": 14.7,
+                "temperatureMax": 14.66,
+                "temperatureMin": 14.66,
+                "uvIndex": 1,
+                "visibility": 9.1,
+                "weatherCode": 4200,
+                "windDirection": 68,
+                "windGust": 6.4,
+                "windSpeed": 3.5
+              }
+            },
+            {
+              "startTime": "2026-09-19T11:00:00-05:00",
+              "values": {
+                "cloudCover": 100,
+                "dewPoint": 13.8,
+                "humidity": 95,
+                "precipitationProbability": 74,
+                "precipitationProbabilityAvg": 74,
+                "precipitationProbabilityMax": 74,
+                "pressureSurfaceLevel": 982.61,
+                "rainIntensity": 0.33,
+                "rainIntensityAvg": 0.33,
+                "sleetIntensity": 0,
+                "sleetIntensityAvg": 0,
+                "snowIntensity": 0,
+                "snowIntensityAvg": 0,
+                "temperature": 14.59,
+                "temperatureApparent": 14.6,
+                "temperatureMax": 14.59,
+                "temperatureMin": 14.59,
+                "uvIndex": 1,
+                "visibility": 12.2,
+                "weatherCode": 4000,
+                "windDirection": 80,
+                "windGust": 6.1,
+                "windSpeed": 3.4
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
 import uvicorn
 
-from cache import get_cached_weather, get_cache_meta, read_cached_payload
+from cache import get_cached_weather, get_cache_meta, read_cached_payload, cached_response
 from scheduler import start_scheduler
 from weather import get_weather_for_location
 
@@ -122,9 +122,9 @@ def get_weather(
     acquired = lock.acquire(timeout=30)  # avoid deadlock; tweak as needed
     if not acquired:
         # Fallback: serve whatever is currently cached
-        data = get_cached_weather(location_name)
-        if data:
-            return JSONResponse(content=data)
+        payload = read_cached_payload(location_name)
+        if payload:
+            return JSONResponse(content=cached_response(payload, refresh_failed=True))
         raise HTTPException(
             status_code=503, detail="Busy refreshing; try again shortly"
         )
@@ -139,12 +139,12 @@ def get_weather(
         # Perform the refresh (fetch → merge → save)
         merged = get_weather_for_location(loc, config)
         return JSONResponse(content=merged)
-    except Exception as e:
+    except Exception:
         # If refresh failed, try to serve the last payload (even if expired) to be user-friendly
         fallback = read_cached_payload(location_name)
         if fallback and "data" in fallback:
-            return JSONResponse(content=fallback["data"])
-        raise HTTPException(status_code=502, detail=f"Upstream fetch failed: {e}")
+            return JSONResponse(content=cached_response(fallback, refresh_failed=True))
+        raise HTTPException(status_code=502, detail="Upstream fetch failed; no cached weather available")
     finally:
         try:
             lock.release()

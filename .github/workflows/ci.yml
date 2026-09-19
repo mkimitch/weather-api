@@ -22,6 +22,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Tests
+        run: python -m unittest discover -s tests -v
+
       - name: Syntax check
         run: |
           python -m py_compile main.py cache.py scheduler.py weather.py

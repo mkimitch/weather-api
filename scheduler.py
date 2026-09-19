@@ -51,38 +51,36 @@ class WeatherScheduler:
     def record_api_call(self, provider: str):
         self.api_call_timestamps[provider].append(datetime.now(timezone.utc))
 
+    def refresh_location(self, loc):
+        # Disable exhausted providers in the actual request, not just in a log.
+        call_config = dict(self.config)
+        for provider in ("openweather", "tomorrow"):
+            enabled = bool(self.api_keys[provider]) and self.config.get(f"enable_{provider}", True)
+            allowed = enabled and self.can_make_api_call(provider)
+            call_config[f"enable_{provider}"] = allowed
+            if allowed:
+                # Failed upstream attempts also consume quota.
+                self.record_api_call(provider)
+            elif enabled:
+                logger.warning("%s API call limit reached; skipping provider", provider)
+        if not call_config["enable_openweather"] and not call_config["enable_tomorrow"]:
+            raise RateLimitExceeded()
+        return get_weather_for_location(loc, call_config)
+
     def scheduler_loop(self):
         """Background loop: fetch merged weather for each location at interval."""
         while True:
             try:
                 for loc in self.locations:
-                    # We only gate on OpenWeather being available; Tomorrow is optional
-                    if not self.can_make_api_call("openweather"):
-                        logger.warning(
-                            "OpenWeather API call limit reached, skipping fetch."
-                        )
-                        continue
-                    # Optional: if Tomorrow present and also limited, we still fetch OWM-only.
-                    if self.api_keys.get("tomorrow") and not self.can_make_api_call(
-                        "tomorrow"
-                    ):
-                        logger.warning(
-                            "Tomorrow.io API call limit reached; merging OWM-only."
-                        )
-
                     try:
-                        merged = get_weather_for_location(loc, self.config)
-                        # Count calls: one for OWM always; one for Tomorrow if API key present
-                        self.record_api_call("openweather")
-                        if self.api_keys.get("tomorrow"):
-                            self.record_api_call("tomorrow")
+                        merged = self.refresh_location(loc)
                         logger.info(
                             f"Fetched and cached weather for {loc['name']} (updatedAt={merged.get('updatedAt')})"
                         )
                     except RateLimitExceeded:
                         logger.warning("Rate limit exceeded; skipping cycle.")
                     except Exception as e:
-                        logger.error(f"Error fetching weather for {loc['name']}: {e}")
+                        logger.error("Error fetching weather for %s (%s)", loc["name"], type(e).__name__)
 
                 time.sleep(self.refresh_interval * 60)
             except Exception as e:

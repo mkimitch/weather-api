@@ -9,8 +9,13 @@ tomorrow_api_key: "YOUR_TOMORROW_API_KEY" # optional; if missing, OWM-only
 enable_openweather: true
 enable_tomorrow: true
 
-# Preferred upstream units (we still normalize internally)
-units: "metric" # "metric" or "imperial"
+# Canonical API units are ALWAYS metric (tempC, windKph, pressureHpa, mm).
+# Legacy units settings are ignored; providers are always requested in metric.
+units: "metric"
+
+# Tomorrow Timelines free plans allow at most five days ahead (today + up to 5).
+# Set to 8 only if your paid plan supports it; unsupported horizons return 403.
+tomorrow_forecast_days: 5
 
 # List of locations to fetch weather for. Each can be city name, lat/lon, or OpenWeather location ID
 locations:
@@ -18,16 +23,19 @@ locations:
   - name: "Chicago,US"
     type: "city"
     query: "Chicago,US"
+    timezone: "America/Chicago" # recommended, especially for Tomorrow-only operation
   # By latitude/longitude
   - name: "Eiffel Tower"
     type: "latlon"
     lat: 48.8584
     lon: 2.2945
+    timezone: "Europe/Paris"
 
 # How often to refresh weather for each location (minutes)
 refresh_interval_minutes: 30
 
-# Per-provider max API calls in a 24h rolling window
+# Scheduler per-provider max attempts in a 24h rolling window.
+# Counts reset on restart; HTTP refreshes are not counted by this scheduler budget.
 max_calls_per_24h_openweather: 900
 max_calls_per_24h_tomorrow: 500
 
