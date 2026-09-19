@@ -11,8 +11,10 @@ Free-tier friendly:
 """
 
 import logging
-from datetime import datetime, timezone
+import math
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
+from zoneinfo import ZoneInfo
 
 import requests
 
@@ -57,6 +59,7 @@ def fetch_openweather(
     Fetch OpenWeather One Call 3.0.
     We keep minutely for completeness (you can exclude if you don't need it).
     """
+    require_metric(units)
     params = {
         "lat": lat,
         "lon": lon,
@@ -73,12 +76,17 @@ def fetch_openweather(
 # Provider: Tomorrow.io
 # ----------------------
 def fetch_tomorrow(
-    lat: float, lon: float, api_key: str, *, units: str = "metric"
+    lat: float, lon: float, api_key: str, *, units: str = "metric",
+    timezone_name: str = "auto", forecast_days: int = 5,
 ) -> Dict[str, Any]:
     """
-    Fetch Tomorrow.io v4 Timelines for current+hourly+daily in a single POST.
+    Fetch Tomorrow.io v4 hourly+daily Timelines in a single POST.
+    The first hourly interval supplies the current fallback.
     Tomorrow uses header 'apikey'.
     """
+    require_metric(units)
+    if not isinstance(forecast_days, int) or not 1 <= forecast_days <= 14:
+        raise ValueError("tomorrow_forecast_days must be an integer from 1 to 14")
     fields = [
         "temperature",
         "temperatureApparent",
@@ -107,8 +115,11 @@ def fetch_tomorrow(
         "units": units,
         "timesteps": ["1h", "1d"],
         "startTime": "now",
-        "endTime": "nowPlus1d",
-        "timezone": "UTC",
+        # Timelines relative syntax; free plans support at most +5d.
+        "endTime": f"nowPlus{forecast_days}d",
+        "timezone": timezone_name,
+        # Match calendar-day forecasts, not Tomorrow's default 06:00–06:00.
+        "dailyStartHour": 0,
     }
     resp = requests.post(
         TOMORROW_TIMELINES_URL,
@@ -120,13 +131,8 @@ def fetch_tomorrow(
         },
         timeout=12,
     )
-    if not resp.ok:
-        try:
-            detail = resp.json()
-        except Exception:
-            detail = resp.text
-        logger.error("Tomorrow.io Timelines error %s: %s", resp.status_code, detail)
-        resp.raise_for_status()
+    # Do not log error bodies or request URLs: they can contain credentials.
+    resp.raise_for_status()
     return resp.json()
 
 
@@ -156,38 +162,76 @@ def mm_from_owm_precip(obj: Optional[Dict[str, Any]]) -> float:
     return float(obj.get("1h") or obj.get("3h") or 0.0)
 
 
-def _clamp_probability(value: float) -> float:
-    return max(0.0, min(value, 1.0))
+def require_metric(units: str) -> None:
+    if units != "metric":
+        raise ValueError("Provider input must use metric units for the canonical API")
+
+
+def usable(value: Any) -> bool:
+    """Missing/nonfinite values fall back; zero is a valid measurement."""
+    if value is None:
+        return False
+    if isinstance(value, (float, int)):
+        return math.isfinite(value)
+    if isinstance(value, dict):
+        return any(usable(v) for v in value.values())
+    return bool(value)
+
+
+def local_date(ts: Any, timezone_name: Optional[str] = None, offset: int = 0) -> Optional[str]:
+    if ts is None:
+        return None
+    if isinstance(ts, (int, float)):
+        dt = datetime.fromtimestamp(ts, timezone.utc)
+    else:
+        dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    if timezone_name:
+        dt = dt.astimezone(ZoneInfo(timezone_name))
+    elif isinstance(ts, (int, float)):
+        dt = dt.astimezone(timezone(timedelta(seconds=offset)))
+    # For Tomorrow timezone=auto, preserve the provider's returned local offset.
+    return dt.date().isoformat()
 
 
 def pop_from_unit_interval(value: Optional[float]) -> Optional[float]:
-    if value is None:
+    if not usable(value):
         return None
-    return _clamp_probability(float(value))
+    value = float(value)
+    return value if 0 <= value <= 1 else None
 
 
 def pop_from_percent(value: Optional[float]) -> Optional[float]:
-    if value is None:
-        return None
-    return _clamp_probability(float(value) / 100.0)
+    return None if not usable(value) else pop_from_unit_interval(float(value) / 100)
+
+
+TOMORROW_POP_FIELDS = (
+    "precipitationProbabilityAvg",
+    "precipitationProbability",
+    "precipitationProbabilityMax",
+)
+
+
+def tomorrow_pop_basis(values: Dict[str, Any]) -> Optional[str]:
+    return next((field for field in TOMORROW_POP_FIELDS
+                 if pop_from_percent(values.get(field)) is not None), None)
 
 
 def pop_from_tomorrow_daily(values: Dict[str, Any]) -> Optional[float]:
-    for field in (
-        "precipitationProbabilityAvg",
-        "precipitationProbability",
-        "precipitationProbabilityMax",
-    ):
-        pop = pop_from_percent(values.get(field))
-        if pop is not None:
-            return pop
-    return None
+    # Preserve the existing average-first fallback, but label its semantics.
+    # An average of interval probabilities is not probability of any rain that day.
+    field = tomorrow_pop_basis(values)
+    return pop_from_percent(values[field]) if field else None
 
 
 # ----------------------------
 # Normalize: OpenWeather → uni
 # ----------------------------
-def normalize_openweather(raw: Dict[str, Any]) -> Dict[str, Any]:
+def normalize_openweather(
+    raw: Dict[str, Any], *, timezone_name: Optional[str] = None,
+    fetched_at: Optional[str] = None,
+) -> Dict[str, Any]:
     """
     Unified shape:
     {
@@ -199,6 +243,7 @@ def normalize_openweather(raw: Dict[str, Any]) -> Dict[str, Any]:
       "astronomy": {...}
     }
     """
+    timezone_name = timezone_name or raw.get("timezone")
     current = None
     rc = raw.get("current") or {}
     if rc:
@@ -253,10 +298,11 @@ def normalize_openweather(raw: Dict[str, Any]) -> Dict[str, Any]:
 
     daily = []
     for d in raw.get("daily") or []:
+        date = local_date(d.get("dt"), timezone_name, raw.get("timezone_offset", 0))
+        if date is None:
+            continue
         entry = {
-            "date": (
-                datetime.fromtimestamp(d.get("dt", 0), tz=timezone.utc).isoformat()
-            )[:10],
+            "date": date,
             "sunrise": to_iso(d.get("sunrise"), zero_as_none=True),
             "sunset": to_iso(d.get("sunset"), zero_as_none=True),
             "moonrise": to_iso(d.get("moonrise"), zero_as_none=True),
@@ -271,6 +317,7 @@ def normalize_openweather(raw: Dict[str, Any]) -> Dict[str, Any]:
                 "eve": (d.get("temp") or {}).get("eve"),
             },
             "pop": pop_from_unit_interval(d.get("pop")),
+            "popBasis": "daily" if pop_from_unit_interval(d.get("pop")) is not None else None,
             "precipMm": float(d.get("rain") or 0) + float(d.get("snow") or 0),
             "windKph": kph_from_ms(d.get("wind_speed")),
             "windGustKph": kph_from_ms(d.get("wind_gust")),
@@ -315,8 +362,8 @@ def normalize_openweather(raw: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "lat": raw.get("lat"),
         "lon": raw.get("lon"),
-        "timezone": raw.get("timezone"),
-        "updatedAt": datetime.now(timezone.utc).isoformat(),
+        "timezone": timezone_name,
+        "updatedAt": fetched_at or datetime.now(timezone.utc).isoformat(),
         "current": current,
         "hourly": hourly,
         "daily": daily,
@@ -336,7 +383,10 @@ def _get_timeline(raw: Dict[str, Any], step: str) -> List[Dict[str, Any]]:
     return []
 
 
-def normalize_tomorrow(raw: Dict[str, Any]) -> Dict[str, Any]:
+def normalize_tomorrow(
+    raw: Dict[str, Any], *, timezone_name: Optional[str] = None,
+    fetched_at: Optional[str] = None,
+) -> Dict[str, Any]:
     loc = raw.get("location")
     lat = lon = None
     if isinstance(loc, dict):
@@ -357,22 +407,14 @@ def normalize_tomorrow(raw: Dict[str, Any]) -> Dict[str, Any]:
         current = {
             "time": to_iso(cur[0]["startTime"]),
             "tempC": cv.get("temperature"),
-            "feelsLikeC": cv.get("temperatureApparent", cv.get("temperature")),
+            "feelsLikeC": cv.get("temperatureApparent") if cv.get("temperatureApparent") is not None else cv.get("temperature"),
             "humidity": cv.get("humidity"),
             "dewPointC": cv.get("dewPoint"),
             "pressureHpa": cv.get("pressureSurfaceLevel"),
             "windKph": kph_from_ms(cv.get("windSpeed")),
             "windGustKph": kph_from_ms(cv.get("windGust")),
             "windDeg": cv.get("windDirection"),
-            # Tomorrow visibility often already in km; if meters, adjust here if needed
-            "visibilityKm": (
-                cv.get(
-                    "visibility",
-                    None if cv.get("visibility") is None else float(cv["visibility"]),
-                )
-                if cv.get("visibility") is not None
-                else None
-            ),
+            "visibilityKm": cv.get("visibility"),  # metric Tomorrow visibility is km
             "uv": cv.get("uvIndex"),
             "cloudCoverPct": cv.get("cloudCover"),
             "precipMmHr": float(cv.get("rainIntensity") or 0)
@@ -411,18 +453,29 @@ def normalize_tomorrow(raw: Dict[str, Any]) -> Dict[str, Any]:
 
     daily = []
     for d in _get_timeline(raw, "1d"):
+        date = local_date(d.get("startTime"), timezone_name)
+        if date is None:
+            continue
         v = d["values"]
         daily.append(
             {
-                "date": to_iso(d.get("startTime"))[:10],
+                "date": date,
                 "tempC": {
-                    "min": v.get("temperatureMin", v.get("temperature")),
-                    "max": v.get("temperatureMax", v.get("temperature")),
+                    "min": v.get("temperatureMin"),
+                    "max": v.get("temperatureMax"),
                 },
                 "pop": pop_from_tomorrow_daily(v),
-                "precipMm": float(v.get("rainIntensity") or 0)
-                + float(v.get("snowIntensity") or 0)
-                + float(v.get("sleetIntensity") or 0),
+                "popBasis": tomorrow_pop_basis(v),
+                # Daily intensity aggregates are mm/hour, not daily mm totals.
+                "precipMm": None,
+                "extra": {
+                    "precipitationProbability": {
+                        field: pop_from_percent(v.get(field)) for field in TOMORROW_POP_FIELDS
+                    },
+                    "precipIntensityMmHr": {
+                        field: v.get(field) for field in ("rainIntensity", "snowIntensity", "sleetIntensity")
+                    },
+                },
                 "windKph": kph_from_ms(v.get("windSpeed")),
                 "windGustKph": kph_from_ms(v.get("windGust")),
                 "uv": v.get("uvIndex"),
@@ -434,7 +487,8 @@ def normalize_tomorrow(raw: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "lat": lat,
         "lon": lon,
-        "updatedAt": datetime.now(timezone.utc).isoformat(),
+        "timezone": timezone_name,
+        "updatedAt": fetched_at or datetime.now(timezone.utc).isoformat(),
         "current": current,
         "hourly": hourly,
         "daily": daily,
@@ -451,141 +505,112 @@ def _fresher(a: Optional[str], b: Optional[str]) -> Optional[str]:
     return "a" if a else ("b" if b else None)
 
 
+def merge_fields(preferred: Dict[str, Any], fallback: Dict[str, Any],
+                 preferred_source: str, fallback_source: str) -> Dict[str, Any]:
+    """Select each usable field; never let a null record field mask fallback data.
+
+    Conditions stay atomic: provider weather-code namespaces cannot be combined.
+    Temperature extrema have independent fallback and independent provenance.
+    """
+    result, sources = {}, {}
+    for field in sorted(set(preferred) | set(fallback)):
+        if field.startswith("_") or field == "popBasis":
+            continue
+        p, f = preferred.get(field), fallback.get(field)
+        if field == "tempC" and (isinstance(p, dict) or isinstance(f, dict)):
+            temps = merge_fields(p or {}, f or {}, preferred_source, fallback_source)
+            result[field] = {k: v for k, v in temps.items() if not k.startswith("_")}
+            sources[field] = temps["_sources"]
+            continue
+        source = preferred_source if usable(p) else fallback_source if usable(f) else None
+        result[field] = p if source == preferred_source else f if source else None
+        if field not in ("date", "time"):
+            sources[field] = source
+    if "pop" in result and ("popBasis" in preferred or "popBasis" in fallback):
+        record = preferred if sources["pop"] == preferred_source else fallback
+        result["popBasis"] = record.get("popBasis") if sources["pop"] else None
+        sources["popBasis"] = sources["pop"]
+    result["_sources"] = sources
+    selected = set()
+    for source in sources.values():
+        selected.update(source.values() if isinstance(source, dict) else [source])
+    selected.discard(None)
+    result["_src"] = next(iter(selected)) if len(selected) == 1 else "mixed" if selected else None
+    return result
+
+
+def daily_disagreements(date: str, a: Dict[str, Any], b: Dict[str, Any]) -> List[Dict[str, Any]]:
+    result = []
+    for field, threshold in (("tempC.max", 5.5), ("tempC.min", 5.5), ("pop", 0.5)):
+        av = (a.get("tempC") or {}).get(field[6:]) if field.startswith("tempC.") else a.get(field)
+        bv = (b.get("tempC") or {}).get(field[6:]) if field.startswith("tempC.") else b.get(field)
+        if usable(av) and usable(bv) and abs(av - bv) >= threshold:
+            result.append({"date": date, "field": field, "openweather": av, "tomorrow": bv,
+                           "difference": round(abs(av - bv), 4)})
+    return result
+
+
 def merge_weather(owm: Dict[str, Any], tmr: Dict[str, Any]) -> Dict[str, Any]:
-    # Current: freshest wins; if tie, prefer Tomorrow for precip richness
-    def pick_current(
-        a: Optional[Dict[str, Any]], b: Optional[Dict[str, Any]]
-    ) -> Optional[Dict[str, Any]]:
-        if not a and not b:
-            return None
-        if a and not b:
-            return a
-        if b and not a:
-            return b
-        which = _fresher(a.get("time"), b.get("time"))
-        if which == "a":
-            return a
-        if which == "b":
-            return b
-        return a if (a or {}).get("_src") == "tomorrow" else b
+    # Current: freshest wins, Tomorrow on ties, with field-level fallback.
+    ca, cb = owm.get("current") or {}, tmr.get("current") or {}
+    current = None
+    if ca or cb:
+        if _fresher(ca.get("time"), cb.get("time")) == "a":
+            current = merge_fields(ca, cb, "openweather", "tomorrow")
+        else:
+            current = merge_fields(cb, ca, "tomorrow", "openweather")
 
-    # Hourly: by timestamp union; conservative POP/precip = max
-    def index_by_time(arr: List[Dict[str, Any]]) -> Dict[str, int]:
-        return {x["time"]: i for i, x in enumerate(arr) if x.get("time")}
+    # Hourly: Tomorrow preference, OWM fallback. Zero POP/precip remain zero.
+    ha = {x["time"]: x for x in owm.get("hourly", []) if x.get("time")}
+    hb = {x["time"]: x for x in tmr.get("hourly", []) if x.get("time")}
+    hourly = [merge_fields(hb.get(t, {}), ha.get(t, {}), "tomorrow", "openweather")
+              for t in sorted(ha.keys() | hb.keys())]
 
-    hourly_out: List[Dict[str, Any]] = []
-    a = owm.get("hourly") or []
-    b = tmr.get("hourly") or []
-    map_a = index_by_time(a)
-    map_b = index_by_time(b)
-    times = sorted(
-        set(
-            [x["time"] for x in a if x.get("time")]
-            + [x["time"] for x in b if x.get("time")]
-        )
-    )
-    for ts in times:
-        ha = a[map_a[ts]] if ts in map_a else None
-        hb = b[map_b[ts]] if ts in map_b else None
-        if ha and not hb:
-            hourly_out.append(ha)
-            continue
-        if hb and not ha:
-            hourly_out.append(hb)
-            continue
-        # merge conservatively
-        pop = max((ha.get("pop") or 0), (hb.get("pop") or 0)) or None
-        precip = max((ha.get("precipMm") or 0), (hb.get("precipMm") or 0)) or None
-        merged = {
-            **ha,
-            **hb,
-            "pop": pop,
-            "precipMm": precip,
-            "_src": hb.get("_src") or ha.get("_src"),
+    # Daily: OWM has eight days and a native daily POP. Prefer it consistently
+    # across the horizon, using Tomorrow per field only when OWM is missing.
+    # Never ensemble daily POP with Tomorrow's average/max interval probabilities.
+    da = {x["date"]: x for x in owm.get("daily", []) if x.get("date")}
+    db = {x["date"]: x for x in tmr.get("daily", []) if x.get("date")}
+    daily, disagreements = [], []
+    for date in sorted(da.keys() | db.keys()):
+        a, b = da.get(date, {}), db.get(date, {})
+        day = merge_fields(a, b, "openweather", "tomorrow")
+        # Keep provider alternatives visible even when below warning thresholds.
+        day["_providers"] = {
+            provider: {
+                "tempC": {k: v if usable(v) else None for k, v in (record.get("tempC") or {}).items()},
+                "pop": record.get("pop") if usable(record.get("pop")) else None,
+                "popBasis": record.get("popBasis"),
+                "extra": record.get("extra"),
+            }
+            for provider, record in (("openweather", a), ("tomorrow", b)) if record
         }
-        hourly_out.append(merged)
+        disagreements.extend(daily_disagreements(date, a, b))
+        daily.append(day)
 
-    # Daily: union on date; keep OWM astronomy, join temps; conservative precip/pop
-    daily_out: List[Dict[str, Any]] = []
-    da = owm.get("daily") or []
-    db = tmr.get("daily") or []
-    map_da = {x["date"]: i for i, x in enumerate(da) if x.get("date")}
-    map_db = {x["date"]: i for i, x in enumerate(db) if x.get("date")}
-    days = sorted(
-        set(
-            [x["date"] for x in da if x.get("date")]
-            + [x["date"] for x in db if x.get("date")]
-        )
-    )
-    for d in days:
-        oa = da[map_da[d]] if d in map_da else None
-        tb = db[map_db[d]] if d in map_db else None
-        if oa and not tb:
-            daily_out.append(oa)
-            continue
-        if tb and not oa:
-            daily_out.append(tb)
-            continue
-        merged = {
-            "date": d,
-            "sunrise": oa.get("sunrise"),
-            "sunset": oa.get("sunset"),
-            "moonrise": oa.get("moonrise"),
-            "moonset": oa.get("moonset"),
-            "moonPhase": oa.get("moonPhase"),
-            "tempC": {
-                "min": (
-                    (tb.get("tempC") or {}).get("min")
-                    if tb
-                    else (oa.get("tempC") or {}).get("min")
-                ),
-                "max": (
-                    (tb.get("tempC") or {}).get("max")
-                    if tb
-                    else (oa.get("tempC") or {}).get("max")
-                ),
-                "day": (oa.get("tempC") or {}).get("day")
-                or (tb.get("tempC") or {}).get("day"),
-                "night": (oa.get("tempC") or {}).get("night")
-                or (tb.get("tempC") or {}).get("night"),
-                "morn": (oa.get("tempC") or {}).get("morn")
-                or (tb.get("tempC") or {}).get("morn"),
-                "eve": (oa.get("tempC") or {}).get("eve")
-                or (tb.get("tempC") or {}).get("eve"),
-            },
-            "pop": max((oa.get("pop") or 0), (tb.get("pop") or 0)) or None,
-            "precipMm": max((oa.get("precipMm") or 0), (tb.get("precipMm") or 0))
-            or None,
-            "windKph": (tb.get("windKph") or oa.get("windKph")),
-            "windGustKph": (tb.get("windGustKph") or oa.get("windGustKph")),
-            "uv": oa.get("uv") if oa.get("uv") is not None else tb.get("uv"),
-            "condition": oa.get("condition") or tb.get("condition"),
-            "_src": "tomorrow",
-        }
-        daily_out.append(merged)
-
-    # Alerts: prefer OWM (gov-issued). Deduplicate by title+window.
     alerts = []
-    for al in owm.get("alerts") or []:
-        key = (al.get("title"), al.get("start"), al.get("end"))
+    for alert in owm.get("alerts") or []:
+        key = (alert.get("title"), alert.get("start"), alert.get("end"))
         if key not in {(x.get("title"), x.get("start"), x.get("end")) for x in alerts}:
-            alerts.append(al)
+            alerts.append(alert)
 
-    astronomy = owm.get("astronomy")  # prefer OWM for free-tier astronomy
-
+    generated_at = datetime.now(timezone.utc).isoformat()
     return {
-        "lat": owm.get("lat") or tmr.get("lat"),
-        "lon": owm.get("lon") or tmr.get("lon"),
+        "lat": owm.get("lat") if owm.get("lat") is not None else tmr.get("lat"),
+        "lon": owm.get("lon") if owm.get("lon") is not None else tmr.get("lon"),
         "timezone": owm.get("timezone") or tmr.get("timezone"),
-        "updatedAt": datetime.now(timezone.utc).isoformat(),
-        "current": pick_current(owm.get("current"), tmr.get("current")),
-        "hourly": hourly_out,
-        "daily": daily_out,
+        "updatedAt": generated_at,  # compatibility: time this merge was generated
+        "generatedAt": generated_at,
+        "current": current,
+        "hourly": hourly,
+        "daily": daily,
         "alerts": alerts,
-        "astronomy": astronomy,
+        "astronomy": owm.get("astronomy"),
         "extra": {
             "owmUpdatedAt": owm.get("updatedAt"),
             "tmrUpdatedAt": tmr.get("updatedAt"),
+            "providerFetchedAt": {"openweather": owm.get("updatedAt"), "tomorrow": tmr.get("updatedAt")},
+            "dailyDisagreements": disagreements,
         },
     }
 
@@ -593,6 +618,11 @@ def merge_weather(owm: Dict[str, Any], tmr: Dict[str, Any]) -> Dict[str, Any]:
 # ---------------------------
 # Public API for this module
 # ---------------------------
+def has_weather(data: Dict[str, Any]) -> bool:
+    records = [data.get("current") or {}] + data.get("daily", []) + data.get("hourly", [])
+    return any(usable(record.get(field)) for record in records for field in ("tempC", "pop"))
+
+
 def get_weather_for_location(
     location: Dict[str, Any], config: Dict[str, Any]
 ) -> Dict[str, Any]:
@@ -602,9 +632,11 @@ def get_weather_for_location(
     - Calls both providers
     - Normalizes, merges, and saves the merged payload
     """
-    owm_key = config["openweather_api_key"]
+    owm_key = config.get("openweather_api_key")
     tmr_key = config.get("tomorrow_api_key")
-    units = config.get("units", "metric")
+    # Legacy config.units cannot change the meaning of tempC/windKph/etc.
+    units = "metric"
+    timezone_name = location.get("timezone")
 
     if location["type"] == "city":
         lat, lon = get_latlon_from_city(location["query"], owm_key)
@@ -618,25 +650,39 @@ def get_weather_for_location(
     enabled_tmr = bool(config.get("enable_tomorrow", bool(tmr_key))) and bool(tmr_key)
 
     # Fetch providers with graceful fallback: proceed even if one fails
+    status = {"openweather": "disabled", "tomorrow": "disabled"}
     owm_uni: Dict[str, Any] = {}
     if enabled_owm:
         try:
             owm_raw = fetch_openweather(lat, lon, owm_key, units=units)
-            owm_uni = normalize_openweather(owm_raw)
+            fetched_at = datetime.now(timezone.utc).isoformat()
+            candidate = normalize_openweather(owm_raw, timezone_name=timezone_name, fetched_at=fetched_at)
+            if not has_weather(candidate):
+                raise ValueError("Empty OpenWeather forecast")
+            owm_uni = candidate
+            timezone_name = timezone_name or owm_uni.get("timezone")
+            status["openweather"] = "ok"
         except Exception as e:
-            logger.warning(
-                f"OpenWeather fetch failed for {location['name']}: {e}"
-            )
+            status["openweather"] = "failed"
+            logger.warning("OpenWeather fetch failed for %s (%s, HTTP %s)",
+                           location["name"], type(e).__name__, getattr(getattr(e, "response", None), "status_code", None))
 
     tmr_uni: Dict[str, Any] = {}
     if enabled_tmr:
         try:
-            tmr_raw = fetch_tomorrow(lat, lon, tmr_key, units=units)
-            tmr_uni = normalize_tomorrow(tmr_raw)
+            tmr_raw = fetch_tomorrow(lat, lon, tmr_key, units=units,
+                                     timezone_name=timezone_name or "auto",
+                                     forecast_days=config.get("tomorrow_forecast_days", 5))
+            fetched_at = datetime.now(timezone.utc).isoformat()
+            candidate = normalize_tomorrow(tmr_raw, timezone_name=timezone_name, fetched_at=fetched_at)
+            if not has_weather(candidate):
+                raise ValueError("Empty Tomorrow forecast")
+            tmr_uni = candidate
+            status["tomorrow"] = "ok"
         except Exception as e:
-            logger.warning(
-                f"Tomorrow.io fetch failed for {location['name']}: {e}"
-            )
+            status["tomorrow"] = "failed"
+            logger.warning("Tomorrow.io fetch failed for %s (%s, HTTP %s)",
+                           location["name"], type(e).__name__, getattr(getattr(e, "response", None), "status_code", None))
 
     if not owm_uni and not tmr_uni:
         # Both providers failed; let caller decide how to handle (usually serve stale cache)
@@ -645,5 +691,7 @@ def get_weather_for_location(
         )
 
     merged = merge_weather(owm_uni or {}, tmr_uni or {})
-    save_weather(location["name"], merged)
-    return merged
+    merged["lat"], merged["lon"] = lat, lon
+    merged["timezone"] = timezone_name or merged.get("timezone")
+    merged["extra"]["providerStatus"] = status
+    return save_weather(location["name"], merged)
