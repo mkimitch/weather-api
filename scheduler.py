@@ -5,6 +5,7 @@ from typing import Dict
 
 from cache import init_cache
 from weather import get_weather_for_location, RateLimitExceeded
+from observations import collect_observations
 from history import claim_job, finish_job, prune
 
 logger = logging.getLogger("scheduler")
@@ -39,6 +40,7 @@ class WeatherScheduler:
                         logger.error("Error fetching weather for %s (%s)", loc["name"], type(e).__name__)
 
                 try:
+                    collect_observations(self.config)
                     if claim_job(self.config, "retention", 1440):
                         prune(self.config)
                         finish_job(self.config, "retention", "ok")

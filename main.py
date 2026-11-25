@@ -34,7 +34,9 @@ def load_config():
     for loc in loaded.get("locations", []):
         if loc.get("timezone"):
             ZoneInfo(loc["timezone"])
-    for key, default, minimum in (("history_retention_days", 400, 2),
+        if loc.get("observation_station") and not loc.get("timezone"):
+            raise ValueError("Observation locations require an explicit IANA timezone")
+    for key, default, minimum in (("history_retention_days", 400, 2), ("observation_interval_minutes", 60, 10),
                                   ("daily_max_age_minutes", 90, 1), ("refresh_interval_minutes", 30, 1)):
         if not isinstance(loaded.get(key, default), (int, float)) or loaded.get(key, default) < minimum:
             raise ValueError(f"{key} must be at least {minimum}")

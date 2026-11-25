@@ -14,7 +14,7 @@ Providers:
 - Simple health endpoint with cache status
 - Optional per-request cache-bust via query param
 - Configurable daily forecast priority with per-field provenance
-- Persistent forecast history and shared provider request budgets
+- Persistent forecast history and NWS station observations
 
 ## Requirements
 
@@ -212,7 +212,7 @@ still overlap; both count against these budgets. Avoid polling `refresh=1`.
 
 ```bash
 python -m unittest discover -s tests -v
-python -m py_compile main.py cache.py scheduler.py weather.py history.py timeutils.py
+python -m py_compile main.py cache.py scheduler.py weather.py history.py observations.py timeutils.py
 ```
 
 The captured fixture in `tests/fixtures/forecast-2026-09-19.json` contains current

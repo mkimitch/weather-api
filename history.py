@@ -212,6 +212,7 @@ def prune(config, now=None):
     cutoff = (now - timedelta(days=days)).isoformat()
     with database(config) as db:
         db.execute("DELETE FROM responses WHERE retrieved_at<?", (cutoff,))
+        db.execute("DELETE FROM observations WHERE time<?", (cutoff,))
         db.execute("DELETE FROM attempts WHERE at<?", (cutoff,))
 
 
@@ -220,4 +221,5 @@ def health(config):
         return {"schemaVersion": SCHEMA_VERSION, "enabled": config.get("history_enabled", True),
                 "automaticSwitching": False,
                 "jobs": [dict(r) for r in db.execute("SELECT * FROM jobs")],
-                "latestForecast": db.execute("SELECT MAX(retrieved_at) FROM responses").fetchone()[0]}
+                "latestForecast": db.execute("SELECT MAX(retrieved_at) FROM responses").fetchone()[0],
+                "latestObservation": db.execute("SELECT MAX(time) FROM observations").fetchone()[0]}

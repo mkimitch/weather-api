@@ -32,6 +32,8 @@ locations:
     type: "city"
     query: "Chicago,US"
     timezone: "America/Chicago" # recommended, especially for Tomorrow-only operation
+    # Optional regional observation proxy. Enable with an NWS contact User-Agent.
+    # observation_station: "KORD"
   # By latitude/longitude
   - name: "Eiffel Tower"
     type: "latlon"
@@ -54,6 +56,14 @@ history_enabled: true
 # Default: <cache_dir>/history.sqlite3. Override with WEATHER_HISTORY_DB if needed.
 # history_db: "./weather_cache/history.sqlite3"
 history_retention_days: 400
+
+# Runs inside the existing scheduler; no separate cron/container required.
+observations_enabled: true
+observation_interval_minutes: 60
+observation_lookback_days: 3 # bounded to 1-7; retries recent QC corrections
+# Set NWS_USER_AGENT to e.g. "weather-api (your contact email)".
+# Collection records a failure until contact information is configured.
+nws_user_agent: ""
 
 # Cache settings
 cache_dir: "./weather_cache"
