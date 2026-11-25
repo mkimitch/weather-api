@@ -255,26 +255,30 @@ def local_date(ts: Any, timezone_name: Optional[str] = None, offset: int = 0) ->
 
 
 def pop_from_unit_interval(value: Optional[float]) -> Optional[float]:
-    if not usable(value):
-        return None
-    try:
-        value = float(value)
-    except (ValueError, TypeError):
-        return None
-    return value if 0 <= value <= 1 else None
+    if type(value) in (int, float) and 0 <= value <= 1:
+        return float(value)
+    return None
 
 
 def pop_from_percent(value: Optional[float]) -> Optional[float]:
-    try:
-        return None if not usable(value) else pop_from_unit_interval(float(value) / 100)
-    except (ValueError, TypeError):
+    if type(value) in (int, float) and 0 <= value <= 100:
+        return value / 100
+    return None
+
+
+def openweather_legacy_condition(record):
+    entries = record.get("weather")
+    if not isinstance(entries, list) or not entries or not isinstance(entries[0], dict):
         return None
+    entry = entries[0]
+    return {"code": entry.get("id"), "main": entry.get("main"),
+            "desc": entry.get("description"), "icon": entry.get("icon")}
 
 
 TOMORROW_POP_FIELDS = (
     "precipitationProbabilityAvg",
-    "precipitationProbability",
     "precipitationProbabilityMax",
+    "precipitationProbability",
 )
 
 
@@ -284,7 +288,7 @@ def tomorrow_pop_basis(values: Dict[str, Any]) -> Optional[str]:
 
 
 def pop_from_tomorrow_daily(values: Dict[str, Any]) -> Optional[float]:
-    # Preserve the existing average-first fallback, but label its semantics.
+    # Prefer the documented average, then maximum, to the unknown unsuffixed field.
     # An average of interval probabilities is not probability of any rain that day.
     field = tomorrow_pop_basis(values)
     return pop_from_percent(values[field]) if field else None
@@ -332,13 +336,7 @@ def normalize_openweather(
             "precipMmHr": mm_from_owm_precip(rc.get("rain"))
             + mm_from_owm_precip(rc.get("snow")),
             "pop": None,
-            "condition": (rc.get("weather") or [{}])[0]
-            and {
-                "code": (rc.get("weather") or [{}])[0].get("id"),
-                "main": (rc.get("weather") or [{}])[0].get("main"),
-                "desc": (rc.get("weather") or [{}])[0].get("description"),
-                "icon": (rc.get("weather") or [{}])[0].get("icon"),
-            },
+            "condition": openweather_legacy_condition(rc),
             "_src": "openweather",
         }
 
@@ -350,6 +348,7 @@ def normalize_openweather(
                 "tempC": h.get("temp"),
                 "feelsLikeC": h.get("feels_like"),
                 "pop": pop_from_unit_interval(h.get("pop")),
+                "condition": openweather_legacy_condition(h),
                 "precipMm": mm_from_owm_precip(h.get("rain"))
                 + mm_from_owm_precip(h.get("snow")),
                 "windKph": kph_from_ms(h.get("wind_speed")),
@@ -389,13 +388,7 @@ def normalize_openweather(
             "windKph": kph_from_ms(d.get("wind_speed")),
             "windGustKph": kph_from_ms(d.get("wind_gust")),
             "uv": d.get("uvi"),
-            "condition": (d.get("weather") or [{}])[0]
-            and {
-                "code": (d.get("weather") or [{}])[0].get("id"),
-                "main": (d.get("weather") or [{}])[0].get("main"),
-                "desc": (d.get("weather") or [{}])[0].get("description"),
-                "icon": (d.get("weather") or [{}])[0].get("icon"),
-            },
+            "condition": openweather_legacy_condition(d),
             "_src": "openweather",
         }
         daily.append(entry)
@@ -507,6 +500,7 @@ def normalize_tomorrow(
                 "tempC": v.get("temperature"),
                 "feelsLikeC": v.get("temperatureApparent"),
                 "pop": pop_from_percent(v.get("precipitationProbability")),
+                "condition": {"code": v.get("weatherCode")},
                 "precipMm": float(v.get("rainIntensity") or 0)
                 + float(v.get("snowIntensity") or 0)
                 + float(v.get("sleetIntensity") or 0),
@@ -575,8 +569,15 @@ def _fresher(a: Optional[str], b: Optional[str]) -> Optional[str]:
     return "a" if a else ("b" if b else None)
 
 
+DAILY_POP_RANK = {
+    "daily": 0,
+    "precipitationProbabilityAvg": 1,
+    "precipitationProbabilityMax": 2,
+}
+
+
 def merge_fields(preferred: Dict[str, Any], fallback: Dict[str, Any],
-                 preferred_source: str, fallback_source: str) -> Dict[str, Any]:
+                 preferred_source: str, fallback_source: str, *, context=None) -> Dict[str, Any]:
     """Select each usable field; never let a null record field mask fallback data.
 
     Conditions stay atomic: provider weather-code namespaces cannot be combined.
@@ -587,7 +588,12 @@ def merge_fields(preferred: Dict[str, Any], fallback: Dict[str, Any],
         if field.startswith("_") or field in ("popBasis", "precipBasis", "precipComponents"):
             continue
         p, f = preferred.get(field), fallback.get(field)
-        if field in {"pop", "windKph", "windGustKph", "windDeg", "uv", "humidity", "pressureHpa", "precipMm", "precipMmHr", "min", "max", "day", "night", "morn", "eve"}:
+        if field == "pop":
+            p, f = pop_from_unit_interval(p), pop_from_unit_interval(f)
+            if (context == "daily" and f is not None and
+                    DAILY_POP_RANK.get(fallback.get("popBasis"), 3) < DAILY_POP_RANK.get(preferred.get("popBasis"), 3)):
+                p = None
+        if field in {"windKph", "windGustKph", "windDeg", "uv", "humidity", "pressureHpa", "precipMm", "precipMmHr", "min", "max", "day", "night", "morn", "eve"}:
             p = p if isinstance(p, (int, float)) and not isinstance(p, bool) and math.isfinite(p) else None
             f = f if isinstance(f, (int, float)) and not isinstance(f, bool) and math.isfinite(f) else None
         if field == "tempC" and (isinstance(p, dict) or isinstance(f, dict)):
@@ -682,7 +688,7 @@ def merge_weather(owm: Dict[str, Any], tmr: Dict[str, Any], config=None) -> Dict
                     config.get("daily_max_age_minutes", 90), now) for p in order}
         if not any(eligible.values()):
             continue
-        day = merge_fields(eligible[order[0]], eligible[order[1]], *order)
+        day = merge_fields(eligible[order[0]], eligible[order[1]], *order, context="daily")
         temps = day.get("tempC") or {}
         if temps.get("min") is not None and temps.get("max") is not None and temps["min"] > temps["max"]:
             # Field fallback must not manufacture an impossible high/low pair.

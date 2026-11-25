@@ -138,7 +138,7 @@ class ForecastContractTest(unittest.TestCase):
                 self.assertEqual(len(merged["daily"]), 8)
                 for i, day in enumerate(merged["daily"]):
                     self.assertEqual(day["tempC"]["max"], 30 if i < count else 39)
-                    self.assertEqual(day["pop"], .25 if i < count else 1)
+                    self.assertEqual(day["pop"], 1)
                     self.assertEqual(day["_sources"]["tempC"]["max"], "tomorrow" if i < count else "openweather")
                 self.assertEqual(len(merged["extra"]["dailyDisagreements"]), count * 2)
 
@@ -308,9 +308,9 @@ class SelectionPolicyTest(unittest.TestCase):
     def test_config_and_environment_priority(self):
         a, b = forecast("openweather", 1), forecast("tomorrow", 1)
         self.assertEqual(weather.merge_weather(a, b)["daily"][0]["pop"], 1)
-        self.assertEqual(weather.merge_weather(a, b, {"daily_provider_priority": ["tomorrow", "openweather"]})["daily"][0]["pop"], .25)
+        self.assertEqual(weather.merge_weather(a, b, {"daily_provider_priority": ["tomorrow", "openweather"]})["daily"][0]["pop"], 1)
         with patch.dict(os.environ, {"WEATHER_DAILY_PROVIDER_PRIORITY": "tomorrow,openweather"}):
-            self.assertEqual(weather.merge_weather(a, b)["daily"][0]["pop"], .25)
+            self.assertEqual(weather.merge_weather(a, b)["daily"][0]["pop"], 1)
         for invalid in ("tomorrow", ["tomorrow", "tomorrow"], ["unknown", "openweather"]):
             with self.assertRaises(ValueError):
                 weather.merge_weather(a, b, {"daily_provider_priority": invalid})

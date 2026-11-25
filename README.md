@@ -149,14 +149,10 @@ Astronomical timestamps and hourly timestamps remain UTC instants.
   Tomorrow's current fallback is its first hourly forecast, not an observation.
 - Missing/nonfinite fields fall back; valid zeros do not. Conditions remain atomic
   because the providers use different weather-code namespaces.
-- Probabilities are never averaged or combined with `max()`. OpenWeather's native
-  daily `pop` is already 0–1. Tomorrow percentages are divided by 100; its daily
-  fallback prefers `precipitationProbabilityAvg`, then `precipitationProbability`,
-  then `precipitationProbabilityMax`. These are provider aggregates, not equivalent
-  to OpenWeather's daily event probability. `popBasis` identifies the selected
-  quantity. Invalid probabilities become missing, rather than being clamped.
-  Daymark should label the selected basis and display missing probability as unknown;
-  a Tomorrow daily average must not be labeled as the probability of any rain all day.
+- Daily POP is selected independently of other fields. Among eligible values,
+  prefer native daily, average interval, maximum interval, then unknown basis.
+  Provider order breaks ties. Invalid probabilities stay unavailable, valid zero
+  is preserved, and no daily probability is calculated from hourly data.
 - Tomorrow's daily intensity aggregates are not precipitation totals. They remain
   available as `extra.precipIntensityMmHr`; its daily `precipMm` is null.
   OpenWeather daily rain + snow is retained when either component is present;
