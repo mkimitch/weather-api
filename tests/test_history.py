@@ -44,6 +44,29 @@ class HistoryTest(unittest.TestCase):
         self.assertEqual(json.loads(payload)["originalUnits"], "metric")
         self.assertEqual(json.loads(rows[0]["data"])["noonWind"]["windKph"], 0)
 
+    def test_archive_keeps_condition_alternatives_without_repeating_selected_candidates(self):
+        from weather import normalize_tomorrow
+
+        values = {"weatherCode": 1001, "weatherCodeFullDay": 1103, "weatherCodeDay": 11030}
+        raw = {"data": {"timelines": [{"timestep": "1d", "intervals": [
+            {"startTime": "2026-11-01T05:00:00Z", "values": values},
+        ]}]}}
+        normalized = normalize_tomorrow(raw, timezone_name=self.location["timezone"], fetched_at=self.now.isoformat())
+        live_day = normalized["daily"][0]
+        history.record_forecast(self.config, self.location, "tomorrow", raw, normalized)
+        with history.database(self.config) as db:
+            response, forecast = db.execute(
+                "SELECT r.payload,f.data FROM forecasts f JOIN responses r ON r.id=f.response_id"
+            ).fetchone()
+        archive = json.loads(zlib.decompress(response))
+        self.assertEqual(archive["raw"]["timelines"][0]["intervals"][0]["values"], values)
+        for stored in (archive["normalized"]["daily"][0], json.loads(forecast)):
+            self.assertEqual(stored["conditions"], live_day["conditions"])
+            self.assertEqual(stored["_conditionCandidates"], {
+                "weatherCode": live_day["_conditionCandidates"]["weatherCode"]
+            })
+        self.assertIn("weatherCodeFullDay", live_day["_conditionCandidates"])
+
     def test_retention_does_not_touch_cache_or_leave_orphans(self):
         from pathlib import Path
         sentinel = Path(self.temp.name) / "home.json"

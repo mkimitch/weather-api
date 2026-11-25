@@ -134,12 +134,15 @@ class ProviderConditionSemanticsTest(unittest.TestCase):
         self.assertEqual(record["popPeriod"]["sourceTime"], HOURLY_TIMESTAMP)
         self.assertEqual(record["pop"], 0)
 
-    def test_hourly_timestamp_alignment_preserves_fallback(self):
+    def test_hourly_timestamp_alignment_preserves_fallback_without_asserting_comparability(self):
         owm = normalize_openweather(FIXTURE["openWeatherHourly"], fetched_at=FETCHED_AT)
         tmr_raw = tomorrow_timeline("1h", {"weatherCode": 4001, "precipitationProbability": 50},
                                     HOURLY_TIMESTAMP)
         tmr = normalize_tomorrow(tmr_raw, fetched_at=FETCHED_AT)
         row = merge_weather(owm, tmr)["hourly"][0]
+        self.assertEqual(row["_popComparability"]["status"], "unverified")
+        self.assertTrue(row["_popComparability"]["timestampAligned"])
+        self.assertTrue({"start", "end"}.issubset(row["_popComparability"]["reasons"]))
         self.assertEqual(row["_sources"]["pop"], "tomorrow")
 
         del tmr_raw["data"]["timelines"][0]["intervals"][0]["values"]["precipitationProbability"]

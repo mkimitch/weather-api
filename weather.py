@@ -792,6 +792,7 @@ def merge_weather(owm: Dict[str, Any], tmr: Dict[str, Any], config=None) -> Dict
         else:
             current = merge_fields(cb, ca, "tomorrow", "openweather", context="current")
         current["_providers"] = provider_comparisons((("openweather", ca), ("tomorrow", cb)))
+        current["_popComparability"] = pop_comparability(ca, cb)
 
     # Hourly: Tomorrow preference, OWM fallback. Zero POP/precip remain zero.
     ha = {x["time"]: x for x in owm.get("hourly", []) if x.get("time")}
@@ -801,6 +802,7 @@ def merge_weather(owm: Dict[str, Any], tmr: Dict[str, Any], config=None) -> Dict
         a, b = ha.get(time, {}), hb.get(time, {})
         row = merge_fields(b, a, "tomorrow", "openweather", context="hourly")
         row["_providers"] = provider_comparisons((("openweather", a), ("tomorrow", b)))
+        row["_popComparability"] = pop_comparability(a, b)
         hourly.append(row)
 
     # Daily: configured priority, restricted to fresh, complete returned periods.
@@ -835,6 +837,7 @@ def merge_weather(owm: Dict[str, Any], tmr: Dict[str, Any], config=None) -> Dict
             day["_src"] = next(iter(sources)) if len(sources) == 1 else "mixed" if sources else None
         # Keep provider alternatives visible even when below warning thresholds.
         day["_providers"] = provider_comparisons(candidates.items(), eligible)
+        day["_popComparability"] = pop_comparability(a, b)
         disagreements.extend(daily_disagreements(date, a, b))
         daily.append(day)
 

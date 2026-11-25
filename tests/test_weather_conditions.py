@@ -142,6 +142,12 @@ class CanonicalWeatherTest(unittest.TestCase):
                 if reason:
                     self.assertIn(reason, result["reasons"])
 
+    def test_gallery_fixture_is_generated_from_current_catalog(self):
+        from pathlib import Path
+        from scripts.export_weather_contract import contents
+        fixture = Path(__file__).parent / "fixtures" / "weather-contract-v1.json"
+        self.assertEqual(fixture.read_text(encoding="utf-8"), contents())
+
     def test_terminal_partial_day_stays_in_diagnostics_only(self):
         from weather import merge_weather
         raw = {"data": {"timelines": [{"timestep": "1d", "intervals": [

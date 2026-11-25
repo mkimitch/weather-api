@@ -52,7 +52,7 @@ def save_weather(location_name, data):
         with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=CACHE_DIR,
                                          prefix=".weather-", suffix=".tmp", delete=False) as f:
             temp_path = f.name
-            json.dump(payload, f, allow_nan=False)
+            json.dump(payload, f, separators=(",", ":"), allow_nan=False)
         os.chmod(temp_path, mode)
         os.replace(temp_path, path)
     finally:

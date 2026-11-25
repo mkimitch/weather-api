@@ -14,10 +14,27 @@ A period carries a display date separately from UTC coverage bounds. The generic
 
 Valid values are finite numerics between 0 and 1 inclusive after unit conversion. `null` means unavailable. Daily selection prefers an eligible native daily value, then the average interval, maximum interval and unknown basis. This preference applies independently of the configured provider order for other daily metrics. Provider order breaks ties in the same basis. The unsuffixed Tomorrow daily field is unknown basis. No daily value is synthesized from hourly forecasts.
 
-The selected `pop`, `popBasis`, `popPeriod` and corresponding sources travel together. The hourly basis is `interval` and `popPeriod.sourceTime` is the provider timestamp. Hourly as a period basis indicates cadence. Null endpoints mean coverage has not been confirmed. Timestamp-aligned forecasts still participate in hourly fallback. With a current record, only an hourly fallback covering the current timestamp can supply forecast probability. Provider comparisons retain the alternative POP values. A confirmed difference in aggregation, endpoints, event definition, threshold or model issuance is incompatible. Missing evidence makes comparison unverified. The existing `comparable` disagreement flag is true only when comparability is confirmed. Accuracy metric definitions, outputs and unsupported scoring cases remain as described in the [verification runbook](forecast-verification.md).
+The selected `pop`, `popBasis`, `popPeriod` and corresponding sources travel together. The hourly basis is `interval` and `popPeriod.sourceTime` is the provider timestamp. Hourly as a period basis indicates cadence. Null endpoints mean coverage has not been confirmed. Timestamp-aligned forecasts still participate in hourly fallback. `_popComparability.timestampAligned` is distinct from the coverage and event comparison status. With a current record, only an hourly fallback covering the current timestamp can supply forecast probability. Provider comparisons retain the alternative POP values and include `_popComparability` when both values are valid. A confirmed difference in aggregation, endpoints, event definition, threshold or model issuance is incompatible. Missing evidence makes comparison unverified. The existing `comparable` disagreement flag is true only when comparability is confirmed. Accuracy metric definitions, outputs and unsupported scoring cases remain as described in the [verification runbook](forecast-verification.md).
 
-## Validation and release
+## Storage and response overhead
 
-Hand-authored provider fixtures exercise mixed classifications and unsupported codes. Run `python -m unittest discover -s tests` to check the provider evidence and the V1 response shape.
+The cache uses compact JSON. The SQLite archive retains raw provider evidence, all normalized presentation contexts and any condition candidates absent from those contexts. It omits exact copies of selected daily candidates in both the normalized response blob and the per-day record. The public diagnostics keep their existing structure and alternatives.
 
-Deploy the compatible Daymark consumer before rebuilding Weather API. Preserve the cache and take a SQLite-consistent history backup.
+The table shows local results on the checked-in September capture and a deterministic overlap scenario with 48 OpenWeather and 72 Tomorrow hourly rows. Response bytes use the actual JSON response encoder. Gzip uses the same input at all stages. Archive bytes sum compressed response blobs and encoded per-day rows, excluding SQLite page allocation. Generation includes normalization, merge and serialization. Parse timings are medians from Node and indicative of cost on this machine.
+
+| Input and version | JSON bytes | Gzip bytes | Cache bytes | Archive bytes | Generation ms | JSON parse ms |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Capture, legacy | 18,029 | 2,381 | 19,604 | 14,798 | 0.814 | 0.083 |
+| Capture, original refactor | 49,222 | 3,790 | 53,624 | 31,101 | 1.449 | 0.275 |
+| Capture, corrected | 49,636 | 3,824 | 49,583 | 27,372 | 1.492 | 0.244 |
+| Overlap, legacy | 45,670 | 2,967 | 50,115 | 16,822 | 2.029 | 0.240 |
+| Overlap, original refactor | 300,598 | 8,493 | 327,939 | 51,519 | 6.563 | 2.675 |
+| Overlap, corrected | 308,055 | 8,897 | 308,002 | 42,577 | 6.737 | 3.193 |
+
+The overlap response contains 93 copies of selected conditions under provider diagnostics and another 18 under the provider-native field map. The capture has 11 and 6 respectively. The two projections let consumers inspect provider and field alternatives independently. The timings and gzip sizes do not establish that the deployment serves compressed responses.
+
+## Fixtures and release
+
+Run `python scripts/export_weather_contract.py` after catalog edits and replace the fixtures in both repositories from the same output. The output is deterministic and makes no provider requests. It contains normalizer-produced catalog cases and synthetic overlapping conditions. The independent provider-shaped tests assert native field/code pairs, coverage, provenance, and expected classifications separately. Artwork-backed gallery examples are synthetic and carry a partial mapping status.
+
+Deploy the compatible Daymark consumer first, then rebuild Weather API with the existing Compose workflow. Preserve the cache and take a SQLite-consistent history backup. On a normal refresh cycle, check provenance, labels and validity through the API and Daymark proxy. Either product can roll back independently using its prior artifact. Preserve the current cache and history for investigation before changing runtime state.
