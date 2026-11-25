@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from datetime import timedelta
 from pathlib import Path
 
+from conditions import TOMORROW_CONDITION_FIELDS
 from timeutils import day_bounds, instant, local_noon, utcnow
 
 SCHEMA_VERSION = 2
@@ -136,7 +137,7 @@ OWM_FIELDS = {"dt", "temp", "feels_like", "humidity", "dew_point", "pressure", "
 TOMORROW_FIELDS = {"temperature", "temperatureMin", "temperatureMax", "temperatureApparent", "humidity",
                    "dewPoint", "pressureSurfaceLevel", "windSpeed", "windGust", "windDirection", "visibility",
                    "uvIndex", "cloudCover", "precipitationProbability", "precipitationProbabilityAvg",
-                   "precipitationProbabilityMax", "rainIntensity", "snowIntensity", "sleetIntensity", "weatherCode"}
+                   "precipitationProbabilityMax", "rainIntensity", "snowIntensity", "sleetIntensity", *TOMORROW_CONDITION_FIELDS}
 
 
 def raw_weather(provider, raw):

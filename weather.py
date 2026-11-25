@@ -22,6 +22,11 @@ import requests
 
 from cache import save_weather
 from timeutils import day_bounds, instant, utcnow
+from conditions import (
+    SCHEMA_VERSION, TOMORROW_SOLAR_FIELDS, cloud_cover_percent, coverage, interval_coverage, simple_value,
+    openweather_condition, selectable, text_value, tomorrow_condition,
+)
+from precipitation import DAILY_POP_RANK, compare_probability, covers_time, probability_period
 from history import finish_attempt, known_timezone, location_identity, record_forecast, reserve_attempt
 
 # --- Endpoints ---
@@ -271,8 +276,8 @@ def openweather_legacy_condition(record):
     if not isinstance(entries, list) or not entries or not isinstance(entries[0], dict):
         return None
     entry = entries[0]
-    return {"code": entry.get("id"), "main": entry.get("main"),
-            "desc": entry.get("description"), "icon": entry.get("icon")}
+    return {"code": simple_value(entry.get("id")), "main": text_value(entry.get("main")),
+            "desc": text_value(entry.get("description")), "icon": text_value(entry.get("icon"))}
 
 
 TOMORROW_POP_FIELDS = (
@@ -297,6 +302,15 @@ def pop_from_tomorrow_daily(values: Dict[str, Any]) -> Optional[float]:
 # ----------------------------
 # Normalize: OpenWeather → uni
 # ----------------------------
+def interval_probability(value, provider, source_time, fetched_at):
+    pop = pop_from_percent(value) if provider == "tomorrow" else pop_from_unit_interval(value)
+    period = None
+    if pop is not None:
+        bounds = interval_coverage(source_time) if provider == "tomorrow" else coverage("hourly")
+        period = {**probability_period(bounds, provider, retrieved_at=fetched_at), "sourceTime": source_time}
+    return {"pop": pop, "popBasis": "interval" if pop is not None else None, "popPeriod": period}
+
+
 def normalize_openweather(
     raw: Dict[str, Any], *, timezone_name: Optional[str] = None,
     fetched_at: Optional[str] = None,
@@ -312,12 +326,14 @@ def normalize_openweather(
       "astronomy": {...}
     }
     """
+    fetched_at = fetched_at or utcnow().isoformat()
     timezone_name = timezone_name or raw.get("timezone")
     current = None
     rc = raw.get("current") or {}
     if rc:
+        source_time = to_iso(rc.get("dt"))
         current = {
-            "time": to_iso(rc.get("dt")),
+            "time": source_time,
             "tempC": rc.get("temp"),  # already C (units=metric)
             "feelsLikeC": rc.get("feels_like"),
             "humidity": rc.get("humidity"),
@@ -337,18 +353,21 @@ def normalize_openweather(
             + mm_from_owm_precip(rc.get("snow")),
             "pop": None,
             "condition": openweather_legacy_condition(rc),
+            "conditions": {"current": openweather_condition(rc, "current", source_time, fetched_at)},
             "_src": "openweather",
         }
 
     hourly = []
     for h in raw.get("hourly") or []:
+        source_time = to_iso(h.get("dt"))
         hourly.append(
             {
-                "time": to_iso(h.get("dt")),
+                "time": source_time,
                 "tempC": h.get("temp"),
                 "feelsLikeC": h.get("feels_like"),
-                "pop": pop_from_unit_interval(h.get("pop")),
                 "condition": openweather_legacy_condition(h),
+                "conditions": {"hourly": openweather_condition(h, "hourly", source_time, fetched_at)},
+                **interval_probability(h.get("pop"), "openweather", source_time, fetched_at),
                 "precipMm": mm_from_owm_precip(h.get("rain"))
                 + mm_from_owm_precip(h.get("snow")),
                 "windKph": kph_from_ms(h.get("wind_speed")),
@@ -389,6 +408,11 @@ def normalize_openweather(
             "windGustKph": kph_from_ms(d.get("wind_gust")),
             "uv": d.get("uvi"),
             "condition": openweather_legacy_condition(d),
+            "conditions": {"fullDay": openweather_condition(d, "fullDay", to_iso(d.get("dt")),
+                                                             fetched_at, local_date=date)},
+            "popPeriod": probability_period(coverage("unknown", local_date=date), "openweather",
+                                            retrieved_at=fetched_at)
+            if pop_from_unit_interval(d.get("pop")) is not None else None,
             "_src": "openweather",
         }
         daily.append(entry)
@@ -439,7 +463,7 @@ def normalize_openweather(
 def _get_timeline(raw: Dict[str, Any], step: str) -> List[Dict[str, Any]]:
     timelines = (raw.get("data") or {}).get("timelines") or []
     for tl in timelines:
-        if step.lower() in str(tl.get("timestep", "")).lower():
+        if step == tl.get("timestep"):
             return tl.get("intervals") or []
     return []
 
@@ -448,6 +472,7 @@ def normalize_tomorrow(
     raw: Dict[str, Any], *, timezone_name: Optional[str] = None,
     fetched_at: Optional[str] = None,
 ) -> Dict[str, Any]:
+    fetched_at = fetched_at or utcnow().isoformat()
     loc = raw.get("location")
     lat = lon = None
     if isinstance(loc, dict):
@@ -458,15 +483,16 @@ def normalize_tomorrow(
         lat, lon = loc[0], loc[1]
 
     current = None
-    cur = (
-        _get_timeline(raw, "current")
-        or _get_timeline(raw, "1m")
-        or _get_timeline(raw, "1h")
-    )[:1]
-    if cur:
-        cv = cur[0]["values"]
+    for timestep in ("current", "1m", "1h"):
+        intervals = _get_timeline(raw, timestep)
+        if intervals:
+            break
+    if intervals:
+        cv = intervals[0].get("values") or {}
+        source_time = to_iso(intervals[0].get("startTime"))
+        condition_period = interval_coverage(source_time) if timestep == "1h" else coverage("unknown")
         current = {
-            "time": to_iso(cur[0]["startTime"]),
+            "time": source_time,
             "tempC": cv.get("temperature"),
             "feelsLikeC": cv.get("temperatureApparent") if cv.get("temperatureApparent") is not None else cv.get("temperature"),
             "humidity": cv.get("humidity"),
@@ -477,12 +503,17 @@ def normalize_tomorrow(
             "windDeg": cv.get("windDirection"),
             "visibilityKm": cv.get("visibility"),  # metric Tomorrow visibility is km
             "uv": cv.get("uvIndex"),
-            "cloudCoverPct": cv.get("cloudCover"),
+            "cloudCoverPct": cloud_cover_percent(cv.get("cloudCover")),
             "precipMmHr": float(cv.get("rainIntensity") or 0)
             + float(cv.get("snowIntensity") or 0)
             + float(cv.get("sleetIntensity") or 0),
-            "pop": pop_from_percent(cv.get("precipitationProbability")),
-            "condition": {"code": cv.get("weatherCode")},
+            **(
+                interval_probability(cv.get("precipitationProbability"), "tomorrow", source_time, fetched_at)
+                if timestep == "1h" else {"pop": None, "popBasis": None, "popPeriod": None}
+            ),
+            "condition": {"code": simple_value(cv.get("weatherCode"))},
+            "conditions": {"current": tomorrow_condition(cv, "weatherCode", "current", condition_period,
+                                                          source_time, fetched_at, timestep)},
             "extra": {
                 "rainIntensity": cv.get("rainIntensity"),
                 "snowIntensity": cv.get("snowIntensity"),
@@ -493,21 +524,24 @@ def normalize_tomorrow(
 
     hourly = []
     for h in _get_timeline(raw, "1h"):
-        v = h["values"]
+        v = h.get("values") or {}
+        source_time = to_iso(h.get("startTime"))
         hourly.append(
             {
-                "time": to_iso(h.get("startTime")),
+                "time": source_time,
                 "tempC": v.get("temperature"),
                 "feelsLikeC": v.get("temperatureApparent"),
-                "pop": pop_from_percent(v.get("precipitationProbability")),
-                "condition": {"code": v.get("weatherCode")},
+                **interval_probability(v.get("precipitationProbability"), "tomorrow", source_time, fetched_at),
+                "conditions": {"hourly": tomorrow_condition(v, "weatherCode", "hourly", interval_coverage(source_time),
+                                                             source_time, fetched_at, "1h")},
+                "condition": {"code": simple_value(v.get("weatherCode"))},
                 "precipMm": float(v.get("rainIntensity") or 0)
                 + float(v.get("snowIntensity") or 0)
                 + float(v.get("sleetIntensity") or 0),
                 "windKph": kph_from_ms(v.get("windSpeed")),
                 "windGustKph": kph_from_ms(v.get("windGust")),
                 "windDeg": v.get("windDirection"),
-                "cloudCoverPct": v.get("cloudCover"),
+                "cloudCoverPct": cloud_cover_percent(v.get("cloudCover")),
                 "uv": v.get("uvIndex"),
                 "_src": "tomorrow",
             }
@@ -518,11 +552,34 @@ def normalize_tomorrow(
         date = local_date(d.get("startTime"), timezone_name)
         if date is None:
             continue
-        v = d["values"]
+        v = d.get("values") or {}
+        source_time = to_iso(d.get("startTime"))
+        calendar_start, calendar_end = day_bounds(date, timezone_name) if timezone_name else (None, None)
+        if calendar_start and source_time == calendar_start.isoformat():
+            daily_period = coverage("calendar_day", calendar_start.isoformat(), calendar_end.isoformat(), date)
+        else:
+            daily_period = coverage("unknown", local_date=date)
+        native_daily = tomorrow_condition(v, "weatherCode", "fullDay", daily_period, source_time, fetched_at, "1d")
+        condition_candidates = {
+            field: tomorrow_condition(v, field, context, coverage(basis, local_date=date),
+                                      source_time, fetched_at, "1d")
+            for field, (context, basis) in TOMORROW_SOLAR_FIELDS.items()
+        }
+        conditions = {
+            context: condition_candidates[field]
+            for field, (context, _) in TOMORROW_SOLAR_FIELDS.items()
+        }
+        if not selectable(conditions["fullDay"]):
+            conditions["fullDay"] = native_daily or conditions["fullDay"]
+        condition_candidates["weatherCode"] = native_daily
         daily.append(
             {
                 "date": date,
-                "_sourceStart": to_iso(d.get("startTime")),
+                "_sourceStart": source_time,
+                "conditions": conditions,
+                "_conditionCandidates": condition_candidates,
+                "popPeriod": probability_period(daily_period, "tomorrow", retrieved_at=fetched_at)
+                if tomorrow_pop_basis(v) else None,
                 "tempC": {
                     "min": v.get("temperatureMin"),
                     "max": v.get("temperatureMax"),
@@ -542,7 +599,7 @@ def normalize_tomorrow(
                 "windKph": kph_from_ms(v.get("windSpeed")),
                 "windGustKph": kph_from_ms(v.get("windGust")),
                 "uv": v.get("uvIndex"),
-                "condition": {"code": v.get("weatherCode")},
+                "condition": {"code": simple_value(v.get("weatherCode"))},
                 "_src": "tomorrow",
             }
         )
@@ -569,11 +626,57 @@ def _fresher(a: Optional[str], b: Optional[str]) -> Optional[str]:
     return "a" if a else ("b" if b else None)
 
 
-DAILY_POP_RANK = {
-    "daily": 0,
-    "precipitationProbabilityAvg": 1,
-    "precipitationProbabilityMax": 2,
-}
+def select_probability(candidates, context, displayed_time):
+    eligible = []
+    for provider, record in candidates:
+        value = pop_from_unit_interval(record.get("pop"))
+        if value is None:
+            continue
+        period = record.get("popPeriod")
+        if context == "current":
+            aligned = covers_time(period, displayed_time) if "popPeriod" in record else (
+                displayed_time is not None and record.get("time") == displayed_time
+            )
+            if not aligned:
+                continue
+        eligible.append((provider, record, value))
+    if not eligible:
+        return None, {}, None
+    if context == "daily":
+        return min(eligible, key=lambda item: DAILY_POP_RANK.get(item[1].get("popBasis"), 3))
+    return eligible[0]
+
+
+def select_conditions(candidates, contexts):
+    selected, sources = {}, {}
+    for context in contexts:
+        selected[context] = sources[context] = None
+        for provider, record in candidates:
+            condition = (record.get("conditions") or {}).get(context)
+            if selectable(condition):
+                selected[context], sources[context] = condition, provider
+                break
+    return selected, sources
+
+
+def provider_comparisons(candidates, eligible=None):
+    return {
+        provider: {
+            "tempC": {key: value if usable(value) else None for key, value in record["tempC"].items()}
+            if isinstance(record.get("tempC"), dict) else (
+                record.get("tempC") if usable(record.get("tempC")) else None),
+            "condition": record.get("condition"),
+            "conditions": record.get("conditions"),
+            "conditionCandidates": record.get("_conditionCandidates"),
+            "pop": pop_from_unit_interval(record.get("pop")),
+            "popBasis": record.get("popBasis"),
+            "popPeriod": record.get("popPeriod"),
+            "extra": record.get("extra"),
+            "period": record.get("_period"),
+            "eligible": bool(eligible[provider]) if eligible is not None else True,
+        }
+        for provider, record in candidates if record
+    }
 
 
 def merge_fields(preferred: Dict[str, Any], fallback: Dict[str, Any],
@@ -584,15 +687,11 @@ def merge_fields(preferred: Dict[str, Any], fallback: Dict[str, Any],
     Temperature extrema have independent fallback and independent provenance.
     """
     result, sources = {}, {}
+    candidates = ((preferred_source, preferred), (fallback_source, fallback))
     for field in sorted(set(preferred) | set(fallback)):
-        if field.startswith("_") or field in ("popBasis", "precipBasis", "precipComponents"):
+        if field.startswith("_") or field in ("pop", "popBasis", "popPeriod", "conditions", "precipBasis", "precipComponents"):
             continue
         p, f = preferred.get(field), fallback.get(field)
-        if field == "pop":
-            p, f = pop_from_unit_interval(p), pop_from_unit_interval(f)
-            if (context == "daily" and f is not None and
-                    DAILY_POP_RANK.get(fallback.get("popBasis"), 3) < DAILY_POP_RANK.get(preferred.get("popBasis"), 3)):
-                p = None
         if field in {"windKph", "windGustKph", "windDeg", "uv", "humidity", "pressureHpa", "precipMm", "precipMmHr", "min", "max", "day", "night", "morn", "eve"}:
             p = p if isinstance(p, (int, float)) and not isinstance(p, bool) and math.isfinite(p) else None
             f = f if isinstance(f, (int, float)) and not isinstance(f, bool) and math.isfinite(f) else None
@@ -605,10 +704,26 @@ def merge_fields(preferred: Dict[str, Any], fallback: Dict[str, Any],
         result[field] = p if source == preferred_source else f if source else None
         if field not in ("date", "time"):
             sources[field] = source
-    if "pop" in result and ("popBasis" in preferred or "popBasis" in fallback):
-        record = preferred if sources["pop"] == preferred_source else fallback
-        result["popBasis"] = record.get("popBasis") if sources["pop"] else None
-        sources["popBasis"] = sources["pop"]
+    if "pop" in preferred or "pop" in fallback:
+        provider, record, value = select_probability(candidates, context, result.get("time"))
+        for field, field_value in (("pop", value), ("popBasis", record.get("popBasis")),
+                                   ("popPeriod", record.get("popPeriod"))):
+            result[field], sources[field] = field_value, provider
+
+    contexts = ("fullDay", "daytime", "nighttime") if context == "daily" else (context,)
+    if context and ("conditions" in preferred or "conditions" in fallback):
+        conditions, condition_sources = select_conditions(candidates, contexts)
+        result["conditions"], sources["conditions"] = conditions, condition_sources
+        primary = contexts[0]
+        provider = condition_sources[primary]
+        if provider:
+            # Prefer a legacy projection from the same provider when available.
+            # Rich-only codes leave the independently selected legacy fallback intact.
+            legacy_record = preferred if provider == preferred_source else fallback
+            legacy = legacy_record.get("condition")
+            if isinstance(legacy, dict) and legacy.get("code") is not None:
+                result["condition"], sources["condition"] = legacy, provider
+
     if "precipMm" in result:
         record = preferred if sources.get("precipMm") == preferred_source else fallback
         for field in ("precipBasis", "precipComponents"):
@@ -624,15 +739,23 @@ def merge_fields(preferred: Dict[str, Any], fallback: Dict[str, Any],
     return result
 
 
+def pop_comparability(a, b):
+    if any(pop_from_unit_interval(record.get("pop")) is None for record in (a, b)):
+        return None
+    return compare_probability(a, b)
+
+
 def daily_disagreements(date: str, a: Dict[str, Any], b: Dict[str, Any]) -> List[Dict[str, Any]]:
     result = []
     for field, threshold in (("tempC.max", 5.5), ("tempC.min", 5.5), ("pop", 0.5)):
         av = (a.get("tempC") or {}).get(field[6:]) if field.startswith("tempC.") else a.get(field)
         bv = (b.get("tempC") or {}).get(field[6:]) if field.startswith("tempC.") else b.get(field)
         if usable(av) and usable(bv) and abs(av - bv) >= threshold:
+            comparison = pop_comparability(a, b) if field == "pop" else None
             result.append({"date": date, "field": field, "openweather": av, "tomorrow": bv,
                            "difference": round(abs(av - bv), 4),
-                           "comparable": field != "pop" or a.get("popBasis") == b.get("popBasis"),
+                           "comparable": comparison is None or comparison["status"] == "confirmed_comparable",
+                           "comparability": comparison,
                            "bases": [a.get("popBasis"), b.get("popBasis")] if field == "pop" else None})
     return result
 
@@ -665,21 +788,26 @@ def merge_weather(owm: Dict[str, Any], tmr: Dict[str, Any], config=None) -> Dict
     current = None
     if ca or cb:
         if _fresher(ca.get("time"), cb.get("time")) == "a":
-            current = merge_fields(ca, cb, "openweather", "tomorrow")
+            current = merge_fields(ca, cb, "openweather", "tomorrow", context="current")
         else:
-            current = merge_fields(cb, ca, "tomorrow", "openweather")
+            current = merge_fields(cb, ca, "tomorrow", "openweather", context="current")
+        current["_providers"] = provider_comparisons((("openweather", ca), ("tomorrow", cb)))
 
     # Hourly: Tomorrow preference, OWM fallback. Zero POP/precip remain zero.
     ha = {x["time"]: x for x in owm.get("hourly", []) if x.get("time")}
     hb = {x["time"]: x for x in tmr.get("hourly", []) if x.get("time")}
-    hourly = [merge_fields(hb.get(t, {}), ha.get(t, {}), "tomorrow", "openweather")
-              for t in sorted(ha.keys() | hb.keys())]
+    hourly = []
+    for time in sorted(ha.keys() | hb.keys()):
+        a, b = ha.get(time, {}), hb.get(time, {})
+        row = merge_fields(b, a, "tomorrow", "openweather", context="hourly")
+        row["_providers"] = provider_comparisons((("openweather", a), ("tomorrow", b)))
+        hourly.append(row)
 
     # Daily: configured priority, restricted to fresh, complete returned periods.
     # Never ensemble daily POP with Tomorrow's average/max interval probabilities.
     da = {x["date"]: x for x in owm.get("daily", []) if x.get("date")}
     db = {x["date"]: x for x in tmr.get("daily", []) if x.get("date")}
-    daily, disagreements = [], []
+    daily, disagreements, ineligible_days = [], [], []
     for date in sorted(da.keys() | db.keys()):
         a, b = da.get(date, {}), db.get(date, {})
         candidates = {"openweather": a, "tomorrow": b}
@@ -687,6 +815,7 @@ def merge_weather(owm: Dict[str, Any], tmr: Dict[str, Any], config=None) -> Dict
         eligible = {p: eligible_daily(candidates[p], fetched[p],
                     config.get("daily_max_age_minutes", 90), now) for p in order}
         if not any(eligible.values()):
+            ineligible_days.append({"date": date, "_providers": provider_comparisons(candidates.items(), eligible)})
             continue
         day = merge_fields(eligible[order[0]], eligible[order[1]], *order, context="daily")
         temps = day.get("tempC") or {}
@@ -705,17 +834,7 @@ def merge_weather(owm: Dict[str, Any], tmr: Dict[str, Any], config=None) -> Dict
             sources = {v for source in day["_sources"].values() for v in (source.values() if isinstance(source, dict) else [source]) if v}
             day["_src"] = next(iter(sources)) if len(sources) == 1 else "mixed" if sources else None
         # Keep provider alternatives visible even when below warning thresholds.
-        day["_providers"] = {
-            provider: {
-                "tempC": {k: v if usable(v) else None for k, v in (record.get("tempC") or {}).items()},
-                "pop": record.get("pop") if usable(record.get("pop")) else None,
-                "popBasis": record.get("popBasis"),
-                "extra": record.get("extra"),
-                "period": record.get("_period"),
-                "eligible": bool(eligible[provider]),
-            }
-            for provider, record in (("openweather", a), ("tomorrow", b)) if record
-        }
+        day["_providers"] = provider_comparisons(candidates.items(), eligible)
         disagreements.extend(daily_disagreements(date, a, b))
         daily.append(day)
 
@@ -732,6 +851,7 @@ def merge_weather(owm: Dict[str, Any], tmr: Dict[str, Any], config=None) -> Dict
         "timezone": owm.get("timezone") or tmr.get("timezone"),
         "updatedAt": generated_at,  # compatibility: time this merge was generated
         "generatedAt": generated_at,
+        "conditionSchemaVersion": SCHEMA_VERSION,
         "current": current,
         "hourly": hourly,
         "daily": daily,
@@ -742,6 +862,7 @@ def merge_weather(owm: Dict[str, Any], tmr: Dict[str, Any], config=None) -> Dict
             "tmrUpdatedAt": tmr.get("updatedAt"),
             "providerFetchedAt": {"openweather": owm.get("updatedAt"), "tomorrow": tmr.get("updatedAt")},
             "dailyDisagreements": disagreements,
+            "ineligibleDaily": ineligible_days,
             "selectionPolicy": {"dailyPriority": order, "automaticSwitching": False},
         },
     }
@@ -752,7 +873,11 @@ def merge_weather(owm: Dict[str, Any], tmr: Dict[str, Any], config=None) -> Dict
 # ---------------------------
 def has_weather(data: Dict[str, Any]) -> bool:
     records = [data.get("current") or {}] + data.get("daily", []) + data.get("hourly", [])
-    return any(usable(record.get(field)) for record in records for field in ("tempC", "pop"))
+    return any(
+        usable(record.get("tempC")) or pop_from_unit_interval(record.get("pop")) is not None
+        or any(selectable(condition) for condition in (record.get("conditions") or {}).values())
+        for record in records
+    )
 
 
 def record_attempt_outcome(config, attempt, status, normalized=None):
@@ -892,6 +1017,8 @@ def get_weather_for_location(
         )
 
     merged = merge_weather(owm_uni or {}, tmr_uni or {}, config)
+    if not has_weather(merged):
+        raise RuntimeError("No eligible weather to cache.")
     merged["lat"], merged["lon"] = lat, lon
     merged["timezone"] = timezone_name or merged.get("timezone")
     merged["extra"]["providerStatus"] = status

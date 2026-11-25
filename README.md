@@ -147,12 +147,13 @@ Astronomical timestamps and hourly timestamps remain UTC instants.
 - **Current:** prefer the more recent timestamp, Tomorrow on ties; use the other
   provider for missing fields. This retains the pre-existing timestamp policy;
   Tomorrow's current fallback is its first hourly forecast, not an observation.
-- Missing/nonfinite fields fall back; valid zeros do not. Conditions remain atomic
-  because the providers use different weather-code namespaces.
+- Missing or nonfinite fields fall back and valid zeros are preserved. Conditions
+  remain atomic per period. See the [versioned condition and POP contract](docs/weather-condition-contract.md).
 - Daily POP is selected independently of other fields. Among eligible values,
   prefer native daily, average interval, maximum interval, then unknown basis.
-  Provider order breaks ties. Invalid probabilities stay unavailable, valid zero
-  is preserved, and no daily probability is calculated from hourly data.
+  Provider order breaks ties. `popBasis`, `popPeriod` and `_sources.pop` retain
+  the selected semantics and provenance. No daily probability is calculated from
+  hourly data, and invalid values stay unavailable.
 - Tomorrow's daily intensity aggregates are not precipitation totals. They remain
   available as `extra.precipIntensityMmHr`; its daily `precipMm` is null.
   OpenWeather daily rain + snow is retained when either component is present;
@@ -176,8 +177,8 @@ are represented by a nested `tempC` object). Missing values have null sources.
 providers; clients needing a condition's provider should use `_sources.condition`.
 The running family-dashboard bundle inspected on 2026-09-19 does not use `_src`.
 
-Daily `_providers` retains both providers' temperatures, POP, POP basis and
-Tomorrow aggregates. `extra.dailyDisagreements` lists high/low differences of at
+Record-level `_providers` retains provider conditions, POP basis and period,
+and available Tomorrow aggregates. `extra.dailyDisagreements` lists high/low differences of at
 least 5.5°C or POP differences of at least 0.5 (50 percentage points). These are
 comparison diagnostics, not calibrated ensemble statistics; POP bases can differ.
 They neither modify selected values nor fail requests, and avoid noisy production

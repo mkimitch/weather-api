@@ -1,0 +1,559 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Weather API response, condition contract V1",
+  "type": "object",
+  "required": [
+    "conditionSchemaVersion",
+    "current",
+    "hourly",
+    "daily"
+  ],
+  "properties": {
+    "conditionSchemaVersion": {
+      "const": 1
+    },
+    "current": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "conditions",
+            "pop",
+            "popBasis",
+            "popPeriod"
+          ],
+          "properties": {
+            "conditions": {
+              "type": "object",
+              "required": [
+                "current"
+              ],
+              "properties": {
+                "current": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/condition"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            },
+            "pop": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 1
+            },
+            "popBasis": {
+              "enum": [
+                "daily",
+                "interval",
+                "precipitationProbabilityAvg",
+                "precipitationProbabilityMax",
+                "precipitationProbability",
+                null
+              ]
+            },
+            "popPeriod": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/popPeriod"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "hourly": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "conditions",
+          "pop",
+          "popBasis",
+          "popPeriod"
+        ],
+        "properties": {
+          "conditions": {
+            "type": "object",
+            "required": [
+              "hourly"
+            ],
+            "properties": {
+              "hourly": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/condition"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "pop": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1
+          },
+          "popBasis": {
+            "enum": [
+              "daily",
+              "interval",
+              "precipitationProbabilityAvg",
+              "precipitationProbabilityMax",
+              "precipitationProbability",
+              null
+            ]
+          },
+          "popPeriod": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/popPeriod"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "daily": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "conditions",
+          "pop",
+          "popBasis",
+          "popPeriod"
+        ],
+        "properties": {
+          "conditions": {
+            "type": "object",
+            "required": [
+              "fullDay",
+              "daytime",
+              "nighttime"
+            ],
+            "properties": {
+              "fullDay": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/condition"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "daytime": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/condition"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "nighttime": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/condition"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "pop": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1
+          },
+          "popBasis": {
+            "enum": [
+              "daily",
+              "interval",
+              "precipitationProbabilityAvg",
+              "precipitationProbabilityMax",
+              "precipitationProbability",
+              null
+            ]
+          },
+          "popPeriod": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/popPeriod"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "condition": {
+      "type": "object",
+      "required": [
+        "context",
+        "period",
+        "cloudCover",
+        "phenomena",
+        "description",
+        "status",
+        "lightHint",
+        "source"
+      ],
+      "properties": {
+        "context": {
+          "enum": [
+            "current",
+            "hourly",
+            "fullDay",
+            "daytime",
+            "nighttime"
+          ]
+        },
+        "period": {
+          "$ref": "#/$defs/period"
+        },
+        "cloudCover": {
+          "type": "object",
+          "required": [
+            "classes",
+            "mixed",
+            "percent"
+          ],
+          "properties": {
+            "classes": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "clear",
+                  "mostly_clear",
+                  "partly_cloudy",
+                  "mostly_cloudy",
+                  "cloudy",
+                  "overcast"
+                ]
+              },
+              "uniqueItems": true
+            },
+            "mixed": {
+              "type": "boolean"
+            },
+            "percent": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 100
+            }
+          }
+        },
+        "phenomena": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "kind",
+              "intensity",
+              "qualifiers",
+              "evidenceIndex"
+            ],
+            "properties": {
+              "kind": {
+                "enum": [
+                  "drizzle",
+                  "rain",
+                  "snow",
+                  "sleet",
+                  "freezing_drizzle",
+                  "freezing_rain",
+                  "ice_pellets",
+                  "hail",
+                  "mixed_precipitation",
+                  "thunderstorm",
+                  "fog",
+                  "haze",
+                  "smoke",
+                  "volcanic_ash",
+                  "mist",
+                  "sand",
+                  "dust",
+                  "squall",
+                  "tornado"
+                ]
+              },
+              "intensity": {
+                "enum": [
+                  "light",
+                  "moderate",
+                  "heavy",
+                  "very_heavy",
+                  "extreme",
+                  null
+                ]
+              },
+              "qualifiers": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "evidenceIndex": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        },
+        "description": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "known",
+            "partial",
+            "unknown"
+          ]
+        },
+        "lightHint": {
+          "enum": [
+            "day",
+            "night",
+            null
+          ]
+        },
+        "source": {
+          "type": "object",
+          "required": [
+            "provider",
+            "dataKind",
+            "retrievedAt",
+            "sourceTime",
+            "observedAt",
+            "issuedAt",
+            "timestep",
+            "native"
+          ],
+          "properties": {
+            "provider": {
+              "enum": [
+                "openweather",
+                "tomorrow"
+              ]
+            },
+            "dataKind": {
+              "enum": [
+                "observation",
+                "forecast",
+                "analysis",
+                "unknown"
+              ]
+            },
+            "retrievedAt": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "sourceTime": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "observedAt": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "issuedAt": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "timestep": {
+              "type": "string"
+            },
+            "native": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "field",
+                  "code"
+                ],
+                "properties": {
+                  "field": {
+                    "enum": [
+                      "weather",
+                      "weatherCode",
+                      "weatherCodeFullDay",
+                      "weatherCodeDay",
+                      "weatherCodeNight"
+                    ]
+                  },
+                  "code": {
+                    "type": [
+                      "integer",
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "main": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "description": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "icon": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              },
+              "minItems": 1
+            }
+          }
+        }
+      }
+    },
+    "period": {
+      "type": "object",
+      "required": [
+        "basis",
+        "start",
+        "end",
+        "localDate"
+      ],
+      "properties": {
+        "basis": {
+          "enum": [
+            "instantaneous",
+            "hourly",
+            "calendar_day",
+            "sunrise_to_sunrise",
+            "sunrise_to_sunset",
+            "sunset_to_sunrise",
+            "unknown"
+          ]
+        },
+        "start": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "end": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "localDate": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date"
+        }
+      }
+    },
+    "popPeriod": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/period"
+        },
+        {
+          "type": "object",
+          "required": [
+            "thresholdMm",
+            "eventDefinition",
+            "issuedAt",
+            "retrievedAt"
+          ],
+          "properties": {
+            "sourceTime": {
+              "type": ["string", "null"],
+              "format": "date-time"
+            },
+            "thresholdMm": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "eventDefinition": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "issuedAt": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "retrievedAt": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
