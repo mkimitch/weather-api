@@ -43,3 +43,9 @@ xxxweather_cache/
 
 # Private Files
 private/
+
+# Forecast history and runtime configuration
+weather_cache/
+config.yaml
+*.sqlite3
+*.sqlite3-*

@@ -14,6 +14,7 @@ Providers:
 - Simple health endpoint with cache status
 - Optional per-request cache-bust via query param
 - Configurable daily forecast priority with per-field provenance
+- Persistent forecast history and shared provider request budgets
 
 ## Requirements
 
@@ -117,11 +118,12 @@ may convert for display.
 
 Daily entries use the location's **local calendar date**. OpenWeather supplies an
 IANA timezone (or UTC offset fallback). An explicit location timezone overrides
-it. Tomorrow requests use that timezone, or `auto` when unknown, and
+it. Tomorrow requests use that timezone (including previously archived IANA metadata
+for the same coordinates), or `auto` when unknown, and
 `dailyStartHour: 0` for midnight aggregation instead of the default 06:00 boundary.
 Configure an explicit IANA timezone, especially for Tomorrow-only use. Without
-one, daily Tomorrow records are excluded because full local-day horizon
-coverage cannot be established safely.
+one, or previously learned IANA metadata, daily Tomorrow records are archived but
+not selected: full local-day horizon coverage cannot be established safely.
 Astronomical timestamps and hourly timestamps remain UTC instants.
 
 - **Daily:** default priority `[openweather, tomorrow]`, configurable via
@@ -130,7 +132,7 @@ Astronomical timestamps and hourly timestamps remain UTC instants.
   fields and days. OpenWeather supplies the extended horizon when Tomorrow is
   preferred. Selection excludes stale responses, expired days, mismatched daily
   boundaries and Tomorrow's incomplete final horizon day. Today's remaining
-  forecast can still be displayed.
+  forecast can be displayed, but is excluded from full-day verification.
   Missing/invalid extrema fall back; mixed extrema must not produce min > max.
   No provider has been demonstrated more accurate for this location.
 - **Hourly:** prefer Tomorrow per field, with OpenWeather fallback.
@@ -175,7 +177,9 @@ Tomorrow aggregates. `extra.dailyDisagreements` lists high/low differences of at
 least 5.5°C or POP differences of at least 0.5 (50 percentage points). These are
 comparison diagnostics, not calibrated ensemble statistics; POP bases can differ.
 They neither modify selected values nor fail requests, and avoid noisy production
-logging. `extra.providerStatus` distinguishes `ok`, `failed`, and `disabled`.
+logging. `extra.providerStatus` distinguishes `ok`, `failed`, `disabled`, `rate_limited`,
+and `quota_unavailable` when the quota store fails after another provider succeeds.
+`extra.historyStatus` reports archive success/failure separately from provider success.
 `extra.selectionPolicy` exposes the configured priority and disabled automatic switching.
 Daily `_providers[].period` and `.eligible` explain horizon exclusions.
 
@@ -195,16 +199,20 @@ provider payloads count as failures. Atomic cache replacement prevents HTTP/heal
 readers seeing half-written JSON. Older cache files with naive UTC timestamps
 remain readable. No old provider payload is mixed into a newly generated response.
 
-Scheduler limits count attempts, including failures, and disable exhausted
-providers while allowing the other provider to continue. These in-memory budgets
-reset on restart and exclude HTTP refreshes and city geocoding. Scheduled and
-HTTP refreshes can overlap. Avoid polling `refresh=1`.
+All application fetch paths share SQLite-backed rolling request budgets, including
+failed attempts, HTTP refreshes and geocoding. Limits survive restarts. Tomorrow
+also has hourly and per-second limits. Quota reservation fails closed if SQLite is
+unavailable; cached responses remain usable. After a successful fetch, a failed
+request outcome or archive write is logged and the weather response is still used.
+Archive failures also appear in `extra.historyStatus`. Other apps
+using the same provider account are not counted. Scheduled and HTTP refreshes can
+still overlap; both count against these budgets. Avoid polling `refresh=1`.
 
 ### Validation and deployment
 
 ```bash
 python -m unittest discover -s tests -v
-python -m py_compile main.py cache.py scheduler.py weather.py timeutils.py
+python -m py_compile main.py cache.py scheduler.py weather.py history.py timeutils.py
 ```
 
 The captured fixture in `tests/fixtures/forecast-2026-09-19.json` contains current

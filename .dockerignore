@@ -7,3 +7,9 @@ venv/
 
 .git/
 .gitignore
+
+weather_cache/
+config.yaml
+private/
+*.sqlite3
+*.sqlite3-*

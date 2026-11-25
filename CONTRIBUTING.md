@@ -39,7 +39,7 @@ Run the same check locally:
 
 ```bash
 python -m unittest discover -s tests -v
-python -m py_compile main.py cache.py scheduler.py weather.py timeutils.py
+python -m py_compile main.py cache.py scheduler.py weather.py history.py timeutils.py
 ```
 
 ## Submitting a pull request

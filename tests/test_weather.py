@@ -1,4 +1,5 @@
 import unittest
+import tempfile
 import os
 import sys
 import types
@@ -211,6 +212,13 @@ class ForecastContractTest(unittest.TestCase):
 
 
 class ProviderNormalizationTest(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        env = patch.dict(os.environ, {"WEATHER_HISTORY_DB": temp.name + "/history.sqlite3"})
+        env.start()
+        self.addCleanup(env.stop)
+
     def test_multi_day_tomorrow_and_percentage_fields(self):
         intervals = [{"startTime": f"2026-09-{d:02}T00:00:00-05:00", "values": {
             "temperatureMin": 10, "temperatureMax": 20, "precipitationProbabilityAvg": 75,

@@ -1,33 +1,45 @@
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
-import cache
+import history
 import scheduler
+import weather
 
 
-class SchedulerFallbackTest(unittest.TestCase):
-    def test_exhausted_provider_is_disabled_in_request_and_other_provider_continues(self):
-        for exhausted in ("tomorrow", "openweather"):
-            with self.subTest(exhausted=exhausted), tempfile.TemporaryDirectory() as directory, \
-                 patch.object(cache, "CACHE_DIR", directory), \
-                 patch.object(scheduler, "get_weather_for_location", return_value={}) as fetch:
-                config = {"cache_dir": directory, "locations": [], "openweather_api_key": "test", "tomorrow_api_key": "test",
-                          "max_calls_per_24h_" + exhausted: 0}
-                runner = scheduler.WeatherScheduler(config)
-                runner.refresh_location({"name": "home"})
-                sent = fetch.call_args.args[1]
-                other = "openweather" if exhausted == "tomorrow" else "tomorrow"
-                self.assertFalse(sent["enable_" + exhausted])
-                self.assertTrue(sent["enable_" + other])
-                self.assertEqual(len(runner.api_call_timestamps[other]), 1)
-                self.assertNotIn("enable_" + exhausted, config)
+class SchedulerBudgetTest(unittest.TestCase):
+    def test_scheduler_delegates_to_shared_fetch_budget(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(scheduler, "get_weather_for_location") as fetch:
+            config = {"cache_dir": directory, "locations": []}
+            runner = scheduler.WeatherScheduler(config)
+            runner.refresh_location({"name": "home"})
+            self.assertIs(fetch.call_args.args[1], config)
 
-    def test_failed_attempts_count_and_tomorrow_only_works(self):
-        with tempfile.TemporaryDirectory() as directory, patch.object(cache, "CACHE_DIR", directory), \
-             patch.object(scheduler, "get_weather_for_location", side_effect=RuntimeError("unavailable")):
-            runner = scheduler.WeatherScheduler({"cache_dir": directory, "locations": [], "tomorrow_api_key": "test"})
-            with self.assertRaises(RuntimeError):
-                runner.refresh_location({"name": "home"})
-            self.assertEqual(len(runner.api_call_timestamps["tomorrow"]), 1)
-            self.assertEqual(len(runner.api_call_timestamps["openweather"]), 0)
+    def test_durable_budgets_count_failures_and_survive_new_connections(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = {"cache_dir": directory, "max_calls_per_24h_tomorrow": 1}
+            now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+            attempt = history.reserve_attempt(config, "tomorrow", "home", now)
+            history.finish_attempt(config, attempt, "failed")
+            self.assertIsNone(history.reserve_attempt(dict(config), "tomorrow", "home", now + timedelta(hours=1)))
+            self.assertIsNotNone(history.reserve_attempt(config, "openweather", "home", now))
+            self.assertIsNotNone(history.reserve_attempt(config, "tomorrow", "home", now + timedelta(days=1)))
+
+    def test_exhausted_provider_falls_back_in_direct_fetch(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(weather, "fetch_tomorrow") as tmr, \
+             patch.object(weather, "fetch_openweather", return_value={"current": {"dt": 1, "temp": 10}}), \
+             patch.object(weather, "save_weather", side_effect=lambda name, data: data):
+            config = {"cache_dir": directory, "tomorrow_api_key": "test", "openweather_api_key": "test", "max_calls_per_24h_tomorrow": 0}
+            result = weather.get_weather_for_location({"name": "home", "type": "latlon", "lat": 44, "lon": -93}, config)
+            tmr.assert_not_called()
+            self.assertEqual(result["extra"]["providerStatus"]["tomorrow"], "rate_limited")
+
+    def test_hour_and_second_limits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+            config = {"cache_dir": directory, "max_calls_per_hour_tomorrow": 2, "max_calls_per_second_tomorrow": 1}
+            self.assertIsNotNone(history.reserve_attempt(config, "tomorrow", "home", now))
+            self.assertIsNone(history.reserve_attempt(config, "tomorrow", "other", now))
+            self.assertIsNotNone(history.reserve_attempt(config, "tomorrow", "home", now + timedelta(seconds=2)))
+            self.assertIsNone(history.reserve_attempt(config, "tomorrow", "home", now + timedelta(minutes=20)))

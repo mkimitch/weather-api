@@ -13,6 +13,7 @@ Free-tier friendly:
 import logging
 import os
 import math
+import sqlite3
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
@@ -21,6 +22,7 @@ import requests
 
 from cache import save_weather
 from timeutils import day_bounds, instant, utcnow
+from history import finish_attempt, known_timezone, location_identity, record_forecast, reserve_attempt
 
 # --- Endpoints ---
 ONECALL_URL = "https://api.openweathermap.org/data/3.0/onecall"
@@ -747,6 +749,14 @@ def has_weather(data: Dict[str, Any]) -> bool:
     return any(usable(record.get(field)) for record in records for field in ("tempC", "pop"))
 
 
+def record_attempt_outcome(config, attempt, status, normalized=None):
+    try:
+        finish_attempt(config, attempt, status, normalized)
+    except Exception as error:
+        # The quota reservation is already durable, even if this row stays pending.
+        logger.error("Request outcome write failed (attempt %s, %s)", attempt, type(error).__name__)
+
+
 def get_weather_for_location(
     location: Dict[str, Any], config: Dict[str, Any]
 ) -> Dict[str, Any]:
@@ -766,11 +776,25 @@ def get_weather_for_location(
     if location["type"] == "city":
         if not owm_key:
             raise ValueError("City geocoding requires OPENWEATHER_API_KEY; prefer configured coordinates")
-        lat, lon = get_latlon_from_city(location["query"], owm_key)
+        attempt = reserve_attempt(config, "openweather", location["name"], request_type="geocode",
+                                  identity=location_identity(location))
+        if attempt is None:
+            raise RateLimitExceeded()
+        try:
+            lat, lon = get_latlon_from_city(location["query"], owm_key)
+        except Exception:
+            record_attempt_outcome(config, attempt, "failed")
+            raise
+        record_attempt_outcome(config, attempt, "geocoded")
     elif location["type"] == "latlon":
         lat, lon = float(location["lat"]), float(location["lon"])
     else:
         raise ValueError(f"Unknown location type: {location['type']}")
+
+    archive_location = dict(location, lat=lat, lon=lon)
+    identity = location_identity(archive_location)
+    timezone_name = timezone_name or known_timezone(config, archive_location)
+    archive_status = {}
 
     # Determine which providers are enabled this call (based on config and key presence)
     enabled_owm = bool(config.get("enable_openweather", True)) and bool(owm_key)
@@ -779,7 +803,10 @@ def get_weather_for_location(
     # Fetch providers with graceful fallback: proceed even if one fails
     status = {"openweather": "disabled", "tomorrow": "disabled"}
     owm_uni: Dict[str, Any] = {}
-    if enabled_owm:
+    attempt_owm = reserve_attempt(config, "openweather", location["name"], identity=identity) if enabled_owm else None
+    if enabled_owm and attempt_owm is None:
+        status["openweather"] = "rate_limited"
+    if attempt_owm is not None:
         try:
             request_start = utcnow()
             owm_raw = fetch_openweather(lat, lon, owm_key, units=units)
@@ -790,15 +817,34 @@ def get_weather_for_location(
                 raise ValueError("Empty OpenWeather forecast")
         except Exception as e:
             status["openweather"] = "failed"
+            record_attempt_outcome(config, attempt_owm, "failed")
             logger.warning("OpenWeather fetch failed for %s (%s, HTTP %s)",
                            location["name"], type(e).__name__, getattr(getattr(e, "response", None), "status_code", None))
         else:
             owm_uni = candidate
             timezone_name = timezone_name or owm_uni.get("timezone")
             status["openweather"] = "ok"
+            record_attempt_outcome(config, attempt_owm, "ok", candidate)
+            try:
+                record_forecast(config, archive_location, "openweather", owm_raw, candidate)
+                archive_status["openweather"] = "stored" if config.get("history_enabled", True) else "disabled"
+            except Exception as archive_error:
+                archive_status["openweather"] = "failed"
+                logger.error("Forecast archive failed (%s)", type(archive_error).__name__)
 
     tmr_uni: Dict[str, Any] = {}
-    if enabled_tmr:
+    try:
+        attempt_tmr = reserve_attempt(config, "tomorrow", location["name"], identity=identity) if enabled_tmr else None
+    except (OSError, sqlite3.Error) as error:
+        if not owm_uni:
+            raise
+        attempt_tmr = None
+        status["tomorrow"] = "quota_unavailable"
+        logger.error("Tomorrow.io quota reservation failed (%s)", type(error).__name__)
+    else:
+        if enabled_tmr and attempt_tmr is None:
+            status["tomorrow"] = "rate_limited"
+    if attempt_tmr is not None:
         try:
             request_start = utcnow()
             tmr_raw = fetch_tomorrow(lat, lon, tmr_key, units=units,
@@ -819,11 +865,19 @@ def get_weather_for_location(
                 raise ValueError("Empty Tomorrow forecast")
         except Exception as e:
             status["tomorrow"] = "failed"
+            record_attempt_outcome(config, attempt_tmr, "failed")
             logger.warning("Tomorrow.io fetch failed for %s (%s, HTTP %s)",
                            location["name"], type(e).__name__, getattr(getattr(e, "response", None), "status_code", None))
         else:
             tmr_uni = candidate
             status["tomorrow"] = "ok"
+            record_attempt_outcome(config, attempt_tmr, "ok", candidate)
+            try:
+                record_forecast(config, archive_location, "tomorrow", tmr_raw, candidate)
+                archive_status["tomorrow"] = "stored" if config.get("history_enabled", True) else "disabled"
+            except Exception as archive_error:
+                archive_status["tomorrow"] = "failed"
+                logger.error("Forecast archive failed (%s)", type(archive_error).__name__)
 
     if not owm_uni and not tmr_uni:
         # Both providers failed; let caller decide how to handle (usually serve stale cache)
@@ -835,4 +889,5 @@ def get_weather_for_location(
     merged["lat"], merged["lon"] = lat, lon
     merged["timezone"] = timezone_name or merged.get("timezone")
     merged["extra"]["providerStatus"] = status
+    merged["extra"]["historyStatus"] = archive_status
     return save_weather(location["name"], merged)

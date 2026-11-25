@@ -1,6 +1,7 @@
 """Offline endpoint/cache integration using captured multi-day provider responses."""
 import json
 import os
+import sqlite3
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -101,3 +102,49 @@ class WeatherEndpointTest(unittest.TestCase):
             stale = json.loads(main.get_weather("home", refresh=1).body)
         self.assertTrue(stale["_cache"]["refreshFailed"])
         self.assertEqual(stale["updatedAt"], response["updatedAt"])
+
+    def test_archive_keeps_both_providers_including_unselected_endpoint_day(self):
+        import history
+        self.refresh()
+        with history.database(self.config) as db:
+            counts = dict(db.execute("SELECT provider,COUNT(*) FROM responses GROUP BY provider").fetchall())
+            days = db.execute("SELECT COUNT(*) FROM forecasts").fetchone()[0]
+        self.assertEqual(counts, {"openweather": 1, "tomorrow": 1})
+        self.assertEqual(days, 14)
+
+    def test_archive_failure_is_visible_and_does_not_discard_valid_weather(self):
+        with patch.object(weather, "record_forecast", side_effect=OSError("test disk error")):
+            result = self.refresh()
+        self.assertEqual(result["extra"]["historyStatus"], {"tomorrow": "failed", "openweather": "failed"})
+        self.assertEqual(result["extra"]["providerStatus"], {"tomorrow": "ok", "openweather": "ok"})
+
+    def test_attempt_status_write_failure_preserves_weather_and_cache(self):
+        with patch.object(weather, "finish_attempt", side_effect=sqlite3.OperationalError) as finish, \
+             patch.object(weather, "record_forecast") as archive:
+            result = self.refresh()
+        self.assertEqual(result["extra"]["providerStatus"], {"tomorrow": "ok", "openweather": "ok"})
+        self.assertEqual(cache.read_cached_payload("home")["data"]["daily"], result["daily"])
+        self.assertEqual(finish.call_count, 2)
+        self.assertEqual(archive.call_count, 2)
+
+    def test_quota_reservation_failure_prevents_provider_requests(self):
+        with patch.object(weather, "reserve_attempt", side_effect=sqlite3.OperationalError), \
+             patch.object(weather, "fetch_openweather") as owm, patch.object(weather, "fetch_tomorrow") as tmr:
+            with self.assertRaises(main.HTTPException) as error:
+                main.get_weather("home", refresh=1)
+        self.assertEqual(error.exception.status_code, 502)
+        owm.assert_not_called()
+        tmr.assert_not_called()
+
+    def test_database_outage_after_first_fetch_keeps_weather_and_blocks_next_request(self):
+        from history import reserve_attempt
+
+        with patch.object(weather, "reserve_attempt", side_effect=[
+            reserve_attempt(self.config, "openweather", "home"), sqlite3.OperationalError()
+        ]), patch.object(weather, "finish_attempt", side_effect=sqlite3.OperationalError), \
+             patch.object(weather, "fetch_openweather", return_value=self.fixture["openweather"]), \
+             patch.object(weather, "fetch_tomorrow") as tmr:
+            result = json.loads(main.get_weather("home", refresh=1).body)
+        tmr.assert_not_called()
+        self.assertEqual(result["extra"]["providerStatus"], {"openweather": "ok", "tomorrow": "quota_unavailable"})
+        self.assertEqual(cache.read_cached_payload("home")["data"]["daily"], result["daily"])

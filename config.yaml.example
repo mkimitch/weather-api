@@ -42,10 +42,18 @@ locations:
 # How often to refresh weather for each location (minutes)
 refresh_interval_minutes: 30
 
-# Scheduler per-provider max attempts in a 24h rolling window.
-# Counts reset on restart; HTTP refreshes are not counted by this scheduler budget.
+# Persistent rolling budgets shared by scheduler, HTTP refreshes and city geocoding.
+# Account usage by other applications is outside these local counters.
 max_calls_per_24h_openweather: 900
 max_calls_per_24h_tomorrow: 500
+max_calls_per_hour_tomorrow: 25
+max_calls_per_second_tomorrow: 3
+
+# Archive all received forecasts, including unselected and partial endpoint days.
+history_enabled: true
+# Default: <cache_dir>/history.sqlite3. Override with WEATHER_HISTORY_DB if needed.
+# history_db: "./weather_cache/history.sqlite3"
+history_retention_days: 400
 
 # Cache settings
 cache_dir: "./weather_cache"

@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 from cache import get_cached_weather, get_cache_meta, read_cached_payload, cached_response
 from scheduler import start_scheduler
 from weather import get_weather_for_location, daily_priority
+from history import health as history_health
 
 
 # ---------- Config ----------
@@ -33,7 +34,8 @@ def load_config():
     for loc in loaded.get("locations", []):
         if loc.get("timezone"):
             ZoneInfo(loc["timezone"])
-    for key, default, minimum in (("daily_max_age_minutes", 90, 1), ("refresh_interval_minutes", 30, 1)):
+    for key, default, minimum in (("history_retention_days", 400, 2),
+                                  ("daily_max_age_minutes", 90, 1), ("refresh_interval_minutes", 30, 1)):
         if not isinstance(loaded.get(key, default), (int, float)) or loaded.get(key, default) < minimum:
             raise ValueError(f"{key} must be at least {minimum}")
     return loaded
@@ -94,6 +96,10 @@ def healthz():
             }
         )
 
+    try:
+        history_status = history_health(config)
+    except Exception:
+        history_status = {"status": "unavailable"}
     return JSONResponse(
         content={
             "status": "ok",
@@ -104,6 +110,7 @@ def healthz():
             },
             "refresh_interval_minutes": config.get("refresh_interval_minutes", 30),
             "locations": locs,
+            "verification": history_status,
         }
     )
 
