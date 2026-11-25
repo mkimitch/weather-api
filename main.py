@@ -13,6 +13,7 @@ from cache import get_cached_weather, get_cache_meta, read_cached_payload, cache
 from scheduler import start_scheduler
 from weather import get_weather_for_location, daily_priority
 from history import health as history_health
+from verification import report as accuracy_report
 
 
 # ---------- Config ----------
@@ -171,6 +172,19 @@ def get_weather(
             lock.release()
         except Exception:
             pass
+
+
+@app.get("/accuracy/{location_name}")
+def get_accuracy(location_name: str, days: int = Query(30, description="Rolling window: 30, 90 or 365 days")):
+    location = _find_location_in_config(location_name)
+    if not location:
+        raise HTTPException(status_code=404, detail="Unknown location")
+    if days not in (30, 90, 365):
+        raise HTTPException(status_code=422, detail="days must be 30, 90 or 365")
+    try:
+        return JSONResponse(content=accuracy_report(config, location, days))
+    except Exception:
+        raise HTTPException(status_code=503, detail="Accuracy history unavailable")
 
 
 if __name__ == "__main__":

@@ -27,4 +27,4 @@ jobs:
 
       - name: Syntax check
         run: |
-          python -m py_compile main.py cache.py scheduler.py weather.py history.py observations.py timeutils.py
+          python -m py_compile main.py cache.py scheduler.py weather.py history.py observations.py verification.py timeutils.py

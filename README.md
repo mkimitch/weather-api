@@ -14,7 +14,10 @@ Providers:
 - Simple health endpoint with cache status
 - Optional per-request cache-bust via query param
 - Configurable daily forecast priority with per-field provenance
-- Persistent forecast history and NWS station observations
+- Persistent forecast history, NWS observations and coverage-aware accuracy reports
+
+See [verification operations and limitations](docs/forecast-verification.md) for setup, schema,
+retention, statistical rules, evidence boundaries and example responses.
 
 ## Requirements
 
@@ -67,6 +70,11 @@ export WEATHER_API_CONFIG=/path/to/config.yaml
 ### `GET /healthz`
 
 Returns uptime, provider key presence, and per-location cache metadata.
+
+### `GET /accuracy/{location_name}?days=30`
+
+Read-only verification report; supports 30, 90 and 365 days. It never fetches upstream
+forecasts. Empty history returns insufficient-data warnings. Automatic switching is disabled.
 
 ### `GET /weather/{location_name}`
 
@@ -212,7 +220,7 @@ still overlap; both count against these budgets. Avoid polling `refresh=1`.
 
 ```bash
 python -m unittest discover -s tests -v
-python -m py_compile main.py cache.py scheduler.py weather.py history.py observations.py timeutils.py
+python -m py_compile main.py cache.py scheduler.py weather.py history.py observations.py verification.py timeutils.py
 ```
 
 The captured fixture in `tests/fixtures/forecast-2026-09-19.json` contains current
@@ -223,7 +231,9 @@ limitations, before/after examples and deployment verification.
 
 On the inspected svc-01 deployment the Git repository is the `app` directory;
 `../compose.yml` builds that directory. Code is copied into the image, not bind
-mounted. After passing checks, use the existing stack's deployment mechanism:
+mounted. Back up the cache directory and configure observation settings and environment
+variables as described in [the runbook](docs/forecast-verification.md) before using the
+existing stack's deployment mechanism:
 
 ```bash
 cd /opt/stacks/weather-api

@@ -1,0 +1,235 @@
+{
+  "exampleType": "Synthetic deterministic test data only; not evidence of real provider performance",
+  "response": {
+    "location": "home",
+    "identity": {
+      "lat": 44.62,
+      "lon": -93.14,
+      "name": "home",
+      "query": null,
+      "timezone": "America/Chicago"
+    },
+    "timezone": "America/Chicago",
+    "windowDays": 30,
+    "period": {
+      "startDateInclusive": "2026-10-03",
+      "endDateExclusive": "2026-11-02"
+    },
+    "generatedAt": "2026-11-02T18:00:00+00:00",
+    "automaticSwitching": false,
+    "status": "ok",
+    "observationSource": {
+      "station": "KLVN",
+      "kind": "measured; daily extrema derived",
+      "settlingHours": 6
+    },
+    "observationCoverage": {
+      "forecastTargetDays": 1,
+      "temperatureVerifiableDays": 1,
+      "precipitationVerifiableDays": 0
+    },
+    "definitions": {
+      "tempMaxC": {
+        "unit": "C",
+        "metric": "MAE",
+        "definition": "Daily forecast high vs adequately sampled station maximum; bias = forecast - observation"
+      },
+      "tempMinC": {
+        "unit": "C",
+        "metric": "MAE",
+        "definition": "Daily forecast low vs adequately sampled station minimum; bias = forecast - observation"
+      },
+      "noonWindKph": {
+        "unit": "km/h",
+        "metric": "MAE",
+        "definition": "Hourly forecast at local noon vs closest valid station reading within 10 minutes"
+      },
+      "pop": {
+        "unit": "probability",
+        "metric": "Brier",
+        "definition": "Mean (probability - binary measurable-precipitation event)^2; only equivalent events permitted"
+      },
+      "precipMm": {
+        "unit": "mm",
+        "metric": "MAE",
+        "definition": "Liquid-equivalent accumulation MAE and event contingency counts at >0.254 mm"
+      },
+      "condition": {
+        "unit": "category",
+        "metric": "accuracy",
+        "definition": "Fraction of equal categories, only for an identical valid period and event definition"
+      }
+    },
+    "leadTimeBasis": "hours from retrieval to local target-day midnight",
+    "results": [
+      {
+        "variable": "tempMaxC",
+        "leadHours": {
+          "minInclusive": 0,
+          "maxExclusive": 24
+        },
+        "providers": {
+          "tomorrow": {
+            "allAvailable": {
+              "sampleCount": 1,
+              "bias": 0,
+              "mae": 0
+            },
+            "paired": {
+              "sampleCount": 1,
+              "bias": 0,
+              "mae": 0
+            },
+            "candidateDays": 1,
+            "verifiedFraction": 1.0
+          },
+          "openweather": {
+            "allAvailable": {
+              "sampleCount": 1,
+              "bias": 2,
+              "mae": 2
+            },
+            "paired": {
+              "sampleCount": 1,
+              "bias": 2,
+              "mae": 2
+            },
+            "candidateDays": 1,
+            "verifiedFraction": 1.0
+          }
+        },
+        "pairedEvidence": {
+          "sampleCount": 1,
+          "calendarWeeks": 1,
+          "meanAbsoluteErrorDifferenceTomorrowMinusOpenweather": -2,
+          "confidenceInterval95": null,
+          "status": "insufficient_data",
+          "recommendation": null
+        },
+        "unpairedDueToRetrievalTime": 0
+      },
+      {
+        "variable": "tempMinC",
+        "leadHours": {
+          "minInclusive": 0,
+          "maxExclusive": 24
+        },
+        "providers": {
+          "tomorrow": {
+            "allAvailable": {
+              "sampleCount": 1,
+              "bias": 0,
+              "mae": 0
+            },
+            "paired": {
+              "sampleCount": 1,
+              "bias": 0,
+              "mae": 0
+            },
+            "candidateDays": 1,
+            "verifiedFraction": 1.0
+          },
+          "openweather": {
+            "allAvailable": {
+              "sampleCount": 1,
+              "bias": 2,
+              "mae": 2
+            },
+            "paired": {
+              "sampleCount": 1,
+              "bias": 2,
+              "mae": 2
+            },
+            "candidateDays": 1,
+            "verifiedFraction": 1.0
+          }
+        },
+        "pairedEvidence": {
+          "sampleCount": 1,
+          "calendarWeeks": 1,
+          "meanAbsoluteErrorDifferenceTomorrowMinusOpenweather": -2,
+          "confidenceInterval95": null,
+          "status": "insufficient_data",
+          "recommendation": null
+        },
+        "unpairedDueToRetrievalTime": 0
+      },
+      {
+        "variable": "noonWindKph",
+        "leadHours": {
+          "minInclusive": 0,
+          "maxExclusive": 24
+        },
+        "providers": {
+          "tomorrow": {
+            "allAvailable": {
+              "sampleCount": 1,
+              "bias": 0,
+              "mae": 0
+            },
+            "paired": {
+              "sampleCount": 1,
+              "bias": 0,
+              "mae": 0
+            },
+            "candidateDays": 1,
+            "verifiedFraction": 1.0
+          },
+          "openweather": {
+            "allAvailable": {
+              "sampleCount": 1,
+              "bias": 2,
+              "mae": 2
+            },
+            "paired": {
+              "sampleCount": 1,
+              "bias": 2,
+              "mae": 2
+            },
+            "candidateDays": 1,
+            "verifiedFraction": 1.0
+          }
+        },
+        "pairedEvidence": {
+          "sampleCount": 1,
+          "calendarWeeks": 1,
+          "meanAbsoluteErrorDifferenceTomorrowMinusOpenweather": -2,
+          "confidenceInterval95": null,
+          "status": "insufficient_data",
+          "recommendation": null
+        },
+        "unpairedDueToRetrievalTime": 0
+      }
+    ],
+    "unverifiable": {
+      "pop": "Tomorrow daily average/max is not a daily event probability; OWM's measurable threshold is undocumented. No comparable daily Brier score or probability-bias claim.",
+      "precipMm": "Tomorrow daily intensity is not accumulation; OWM rain-plus-snow liquid equivalence is not established. Missing station precipitation is not zero.",
+      "condition": "Provider daily representative weather codes do not define a comparable measured daily category."
+    },
+    "excluded": {},
+    "reliability": {
+      "tomorrow": {
+        "attempts": 0,
+        "statuses": {},
+        "failureRate": null,
+        "returnedDailyRecords": 0,
+        "incompleteDailyRecords": 0
+      },
+      "openweather": {
+        "attempts": 0,
+        "statuses": {},
+        "failureRate": null,
+        "returnedDailyRecords": 0,
+        "incompleteDailyRecords": 0
+      }
+    },
+    "warnings": [
+      "No automatic switching. Recommendations require manual review.",
+      "Temperature extrema are derived from station samples, not official measured daily maxima/minima.",
+      "KLVN is a spatial proxy: elevation, airport exposure and localized showers may differ from home.",
+      "Retrieval time is used because provider issuance time is unavailable; no forecasts retrieved after local midnight are scored.",
+      "Latest snapshot per day/provider/24-hour lead group; paired retrievals must be within 30 minutes.",
+      "95% calendar-week cluster bootstrap intervals are exploratory, not adjusted for multiple comparisons or seasonal transfer."
+    ]
+  }
+}

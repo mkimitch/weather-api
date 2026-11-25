@@ -103,6 +103,21 @@ class WeatherEndpointTest(unittest.TestCase):
         self.assertTrue(stale["_cache"]["refreshFailed"])
         self.assertEqual(stale["updatedAt"], response["updatedAt"])
 
+    def test_accuracy_endpoint_and_validation_do_not_fetch_providers(self):
+        from fastapi import HTTPException
+        with patch.object(weather, "fetch_openweather") as owm, patch.object(weather, "fetch_tomorrow") as tmr:
+            for days in (30, 90, 365):
+                response = json.loads(main.get_accuracy("home", days=days).body)
+                self.assertEqual(response["status"], "insufficient_data")
+                self.assertFalse(response["automaticSwitching"])
+            for location, days, status in (("missing", 30, 404), ("home", 7, 422)):
+                with self.assertRaises(HTTPException) as error:
+                    main.get_accuracy(location, days=days)
+                self.assertEqual(error.exception.status_code, status)
+        owm.assert_not_called()
+        tmr.assert_not_called()
+        self.assertIn("/accuracy/{location_name}", main.app.openapi()["paths"])
+
     def test_archive_keeps_both_providers_including_unselected_endpoint_day(self):
         import history
         self.refresh()
