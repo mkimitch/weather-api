@@ -1,4 +1,5 @@
 import unittest
+import os
 import sys
 import types
 import copy
@@ -130,10 +131,14 @@ class ForecastContractTest(unittest.TestCase):
             with self.subTest(tomorrow_days=count):
                 merged = weather.merge_weather(forecast("openweather"), forecast("tomorrow", count))
                 self.assertEqual(len(merged["daily"]), 8)
-                for day in merged["daily"]:
-                    self.assertEqual(day["tempC"]["max"], 39)
-                    self.assertEqual(day["pop"], 1)
-                    self.assertEqual(day["_sources"]["tempC"]["max"], "openweather")
+                self.assertTrue(all(day["_sources"]["tempC"]["max"] == "openweather" for day in merged["daily"]))
+                merged = weather.merge_weather(forecast("openweather"), forecast("tomorrow", count),
+                                               {"daily_provider_priority": ["tomorrow", "openweather"]})
+                self.assertEqual(len(merged["daily"]), 8)
+                for i, day in enumerate(merged["daily"]):
+                    self.assertEqual(day["tempC"]["max"], 30 if i < count else 39)
+                    self.assertEqual(day["pop"], .25 if i < count else 1)
+                    self.assertEqual(day["_sources"]["tempC"]["max"], "tomorrow" if i < count else "openweather")
                 self.assertEqual(len(merged["extra"]["dailyDisagreements"]), count * 2)
 
     def test_pop_policy_is_preference_not_maximum(self):
@@ -145,18 +150,18 @@ class ForecastContractTest(unittest.TestCase):
 
     def test_field_fallback_and_zero_values_and_provenance(self):
         a, b = forecast("openweather", 1), forecast("tomorrow", 1)
-        a["daily"][0].update(tempC={"max": None, "min": 0, "day": 0}, pop=None,
+        b["daily"][0].update(tempC={"max": None, "min": 0, "day": 0}, pop=None,
                               windKph=0, condition={"code": None})
-        b["daily"][0].update(windKph=5, uv=0)
-        day = weather.merge_weather(a, b)["daily"][0]
-        self.assertEqual(day["tempC"], {"max": 30, "min": 0, "day": 0})
+        a["daily"][0].update(windKph=5, uv=0)
+        day = weather.merge_weather(a, b, {"daily_provider_priority": ["tomorrow", "openweather"]})["daily"][0]
+        self.assertEqual(day["tempC"], {"max": 39, "min": 0, "day": 0})
         self.assertEqual(day["windKph"], 0)
-        self.assertEqual(day["pop"], 0.25)
-        self.assertEqual(day["popBasis"], "precipitationProbabilityAvg")
-        self.assertEqual(day["condition"]["code"], 4001)
-        self.assertEqual(day["_sources"]["tempC"], {"max": "tomorrow", "min": "openweather", "day": "openweather"})
+        self.assertEqual(day["pop"], 1)
+        self.assertEqual(day["popBasis"], "daily")
+        self.assertEqual(day["condition"]["code"], 500)
+        self.assertEqual(day["_sources"]["tempC"], {"max": "openweather", "min": "tomorrow", "day": "tomorrow"})
         self.assertEqual(day["_sources"]["sunrise"], "openweather")
-        self.assertEqual(day["_sources"]["condition"], "tomorrow")
+        self.assertEqual(day["_sources"]["condition"], "openweather")
         self.assertEqual(day["_src"], "mixed")
 
     def test_single_provider_fallback(self):
@@ -289,3 +294,56 @@ class ProviderNormalizationTest(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 weather.get_weather_for_location({"name": "test", "type": "latlon", "lat": 44, "lon": -93}, {"openweather_api_key": "test"})
         save.assert_not_called()
+
+
+class SelectionPolicyTest(unittest.TestCase):
+    def test_config_and_environment_priority(self):
+        a, b = forecast("openweather", 1), forecast("tomorrow", 1)
+        self.assertEqual(weather.merge_weather(a, b)["daily"][0]["pop"], 1)
+        self.assertEqual(weather.merge_weather(a, b, {"daily_provider_priority": ["tomorrow", "openweather"]})["daily"][0]["pop"], .25)
+        with patch.dict(os.environ, {"WEATHER_DAILY_PROVIDER_PRIORITY": "tomorrow,openweather"}):
+            self.assertEqual(weather.merge_weather(a, b)["daily"][0]["pop"], .25)
+        for invalid in ("tomorrow", ["tomorrow", "tomorrow"], ["unknown", "openweather"]):
+            with self.assertRaises(ValueError):
+                weather.merge_weather(a, b, {"daily_provider_priority": invalid})
+
+    def test_stale_and_partial_provider_days_fall_back(self):
+        a, b = forecast("openweather", 1), forecast("tomorrow", 1)
+        b["updatedAt"] = "2026-09-01T00:00:00+00:00"
+        config = {"daily_provider_priority": ["tomorrow", "openweather"]}
+        with patch.object(weather, "utcnow", return_value=datetime(2026, 9, 2, tzinfo=timezone.utc)):
+            self.assertEqual(weather.merge_weather(a, b, config)["daily"][0]["_sources"]["pop"], "openweather")
+        b.pop("updatedAt")
+        b["daily"][0]["_period"] = {"complete": False}
+        self.assertEqual(weather.merge_weather(a, b, config)["daily"][0]["_sources"]["pop"], "openweather")
+        self.assertEqual(weather.merge_weather({}, b)["daily"], [])
+
+    def test_invalid_extrema_condition_classification_and_missing_precip(self):
+        raw = {"timezone": "America/Chicago", "daily": [{"dt": 1793552400, "temp": {"min": 20, "max": 10}, "weather": [{"id": 500}]}]}
+        day = normalize_openweather(raw)["daily"][0]
+        self.assertIsNone(day["tempC"]["min"])
+        self.assertIsNone(day["tempC"]["max"])
+        self.assertIsNone(day["precipMm"])
+        self.assertEqual(day["condition"]["category"], "rain")
+        self.assertEqual(weather.condition_category("tomorrow", 4001), "rain")
+        self.assertEqual(weather.daily_owm_precip({"rain": 0}), 0)
+        self.assertIsNone(weather.daily_owm_precip({"rain": -1}))
+        self.assertIsNone(weather.kph_from_ms("bad"))
+        self.assertIsNone(weather.pop_from_percent("bad"))
+
+    def test_field_fallback_cannot_create_inverted_high_low_pair(self):
+        a, b = forecast("openweather", 1), forecast("tomorrow", 1)
+        a["daily"][0]["tempC"] = {"min": 5, "max": 10}
+        b["daily"][0]["tempC"] = {"min": 20, "max": None}
+        day = weather.merge_weather(a, b, {"daily_provider_priority": ["tomorrow", "openweather"]})["daily"][0]
+        self.assertEqual(day["tempC"], {"min": 5, "max": 10})
+        self.assertEqual(day["_sources"]["tempC"], {"min": "openweather", "max": "openweather"})
+
+    def test_wrong_daily_boundary_is_ineligible(self):
+        result = normalize_tomorrow({"data": {"timelines": [{"timestep": "1d", "intervals": [
+            {"startTime": "2026-09-02T06:00:00-05:00", "values": {"temperatureMin": 10, "temperatureMax": 20}}]}]}}, timezone_name="America/Chicago")
+        self.assertFalse(result["daily"][0]["_period"]["complete"])
+
+    def test_tomorrow_location_array_is_latitude_longitude(self):
+        result = normalize_tomorrow({"location": [44.62, -93.14]})
+        self.assertEqual((result["lat"], result["lon"]), (44.62, -93.14))

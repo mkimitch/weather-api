@@ -2,8 +2,10 @@
 # Rename to config.yaml and fill in your details
 
 # Provider API keys
-openweather_api_key: "YOUR_OPENWEATHER_API_KEY"
-tomorrow_api_key: "YOUR_TOMORROW_API_KEY" # optional; if missing, OWM-only
+# Prefer environment variables OPENWEATHER_API_KEY and TOMORROW_API_KEY.
+# Legacy YAML keys remain supported; never commit actual credentials.
+openweather_api_key: ""
+tomorrow_api_key: ""
 
 # Enable/disable providers (allows Tomorrow-only or OWM-only operation)
 enable_openweather: true
@@ -16,6 +18,12 @@ units: "metric"
 # Tomorrow Timelines free plans allow at most five days ahead (today + up to 5).
 # Set to 8 only if your paid plan supports it; unsupported horizons return 403.
 tomorrow_forecast_days: 5
+
+# OpenWeather remains first by default. Check consumer handling of popBasis
+# and null before opting in to Tomorrow-first.
+# Environment override: WEATHER_DAILY_PROVIDER_PRIORITY=tomorrow,openweather
+daily_provider_priority: [openweather, tomorrow]
+daily_max_age_minutes: 90
 
 # List of locations to fetch weather for. Each can be city name, lat/lon, or OpenWeather location ID
 locations:

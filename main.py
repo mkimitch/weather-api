@@ -7,10 +7,11 @@ import yaml
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
 import uvicorn
+from zoneinfo import ZoneInfo
 
 from cache import get_cached_weather, get_cache_meta, read_cached_payload, cached_response
 from scheduler import start_scheduler
-from weather import get_weather_for_location
+from weather import get_weather_for_location, daily_priority
 
 
 # ---------- Config ----------
@@ -24,7 +25,18 @@ def load_config():
             "or set WEATHER_API_CONFIG to a valid path."
         )
     with open(config_path, "r") as f:
-        return yaml.safe_load(f)
+        loaded = yaml.safe_load(f)
+    for env, key in (("OPENWEATHER_API_KEY", "openweather_api_key"), ("TOMORROW_API_KEY", "tomorrow_api_key")):
+        if env in os.environ:
+            loaded[key] = os.environ[env]
+    daily_priority(loaded)
+    for loc in loaded.get("locations", []):
+        if loc.get("timezone"):
+            ZoneInfo(loc["timezone"])
+    for key, default, minimum in (("daily_max_age_minutes", 90, 1), ("refresh_interval_minutes", 30, 1)):
+        if not isinstance(loaded.get(key, default), (int, float)) or loaded.get(key, default) < minimum:
+            raise ValueError(f"{key} must be at least {minimum}")
+    return loaded
 
 
 config = load_config()

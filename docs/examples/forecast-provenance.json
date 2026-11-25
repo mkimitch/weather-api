@@ -1,0 +1,103 @@
+{
+  "exampleType": "Offline replay of the captured September 19 provider fixture with an explicit Tomorrow-first override",
+  "daily": [
+    {
+      "date": "2026-09-20",
+      "tempC": {
+        "day": 17.55,
+        "eve": 16.21,
+        "max": 19.08,
+        "min": 12.44,
+        "morn": 11.82,
+        "night": 13.91
+      },
+      "pop": 0.0,
+      "popBasis": "precipitationProbabilityAvg",
+      "_sources": {
+        "condition": "tomorrow",
+        "extra": "tomorrow",
+        "moonPhase": "openweather",
+        "moonrise": "openweather",
+        "moonset": "openweather",
+        "pop": "tomorrow",
+        "precipMm": null,
+        "sunrise": "openweather",
+        "sunset": "openweather",
+        "tempC": {
+          "day": "openweather",
+          "eve": "openweather",
+          "max": "tomorrow",
+          "min": "tomorrow",
+          "morn": "openweather",
+          "night": "openweather"
+        },
+        "uv": "tomorrow",
+        "windGustKph": "tomorrow",
+        "windKph": "tomorrow",
+        "popBasis": "tomorrow",
+        "precipBasis": null,
+        "precipComponents": null
+      },
+      "_providers": {
+        "openweather": {
+          "tempC": {
+            "min": 11.82,
+            "max": 18.81,
+            "day": 17.55,
+            "night": 13.91,
+            "morn": 11.82,
+            "eve": 16.21
+          },
+          "pop": 0.23,
+          "popBasis": "daily",
+          "extra": null,
+          "period": {
+            "start": "2026-09-20T05:00:00+00:00",
+            "end": "2026-09-21T05:00:00+00:00",
+            "complete": true,
+            "basis": "local_calendar_day",
+            "sourceStart": null,
+            "startedBeforeRetrieval": false
+          },
+          "eligible": true
+        },
+        "tomorrow": {
+          "tempC": {
+            "min": 12.44,
+            "max": 19.08
+          },
+          "pop": 0.0,
+          "popBasis": "precipitationProbabilityAvg",
+          "extra": {
+            "precipitationProbability": {
+              "precipitationProbabilityAvg": 0.0,
+              "precipitationProbability": 0.0,
+              "precipitationProbabilityMax": 0.0
+            },
+            "precipIntensityMmHr": {
+              "rainIntensity": 0,
+              "snowIntensity": 0,
+              "sleetIntensity": 0
+            }
+          },
+          "period": {
+            "start": "2026-09-20T05:00:00+00:00",
+            "end": "2026-09-21T05:00:00+00:00",
+            "complete": true,
+            "basis": "local_calendar_day",
+            "sourceStart": "2026-09-20T05:00:00+00:00",
+            "startedBeforeRetrieval": false
+          },
+          "eligible": true
+        }
+      }
+    }
+  ],
+  "selectionPolicy": {
+    "dailyPriority": [
+      "tomorrow",
+      "openweather"
+    ],
+    "automaticSwitching": false
+  }
+}

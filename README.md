@@ -13,6 +13,7 @@ Providers:
 - Per-location cache files under `./weather_cache`
 - Simple health endpoint with cache status
 - Optional per-request cache-bust via query param
+- Configurable daily forecast priority with per-field provenance
 
 ## Requirements
 
@@ -118,15 +119,20 @@ Daily entries use the location's **local calendar date**. OpenWeather supplies a
 IANA timezone (or UTC offset fallback). An explicit location timezone overrides
 it. Tomorrow requests use that timezone, or `auto` when unknown, and
 `dailyStartHour: 0` for midnight aggregation instead of the default 06:00 boundary.
-If Tomorrow is used alone without an explicit IANA zone, its returned offset is
-preserved when assigning dates, and the top-level timezone may be null.
+Configure an explicit IANA timezone, especially for Tomorrow-only use. Without
+one, daily Tomorrow records are excluded because full local-day horizon
+coverage cannot be established safely.
 Astronomical timestamps and hourly timestamps remain UTC instants.
 
-- **Daily:** prefer OpenWeather for each usable field, including min/max, POP,
-  condition and astronomy; fall back to Tomorrow per field. OpenWeather's eight
-  daily entries normally provide today plus the next seven days. This consistent
-  preference avoids changing temperature providers just because Tomorrow's
-  horizon ends. It does not claim that OpenWeather is always more accurate.
+- **Daily:** default priority `[openweather, tomorrow]`, configurable via
+  `daily_provider_priority` or `WEATHER_DAILY_PROVIDER_PRIORITY`. Select each valid
+  field, keeping zeros and source semantics. The other provider supplies missing
+  fields and days. OpenWeather supplies the extended horizon when Tomorrow is
+  preferred. Selection excludes stale responses, expired days, mismatched daily
+  boundaries and Tomorrow's incomplete final horizon day. Today's remaining
+  forecast can still be displayed.
+  Missing/invalid extrema fall back; mixed extrema must not produce min > max.
+  No provider has been demonstrated more accurate for this location.
 - **Hourly:** prefer Tomorrow per field, with OpenWeather fallback.
 - **Current:** prefer the more recent timestamp, Tomorrow on ties; use the other
   provider for missing fields. This retains the pre-existing timestamp policy;
@@ -139,13 +145,17 @@ Astronomical timestamps and hourly timestamps remain UTC instants.
   then `precipitationProbabilityMax`. These are provider aggregates, not equivalent
   to OpenWeather's daily event probability. `popBasis` identifies the selected
   quantity. Invalid probabilities become missing, rather than being clamped.
+  Daymark should label the selected basis and display missing probability as unknown;
+  a Tomorrow daily average must not be labeled as the probability of any rain all day.
 - Tomorrow's daily intensity aggregates are not precipitation totals. They remain
   available as `extra.precipIntensityMmHr`; its daily `precipMm` is null.
-  OpenWeather daily rain + snow supplies a true daily mm accumulation when present.
+  OpenWeather daily rain + snow is retained when either component is present;
+  both absent is null. Components and basis are exposed, and the unestablished
+  snow/liquid-equivalence definition prevents using this sum as verification truth.
 
 Tomorrow Timelines accepts relative expressions such as `nowPlus5d`. Its free
 plan supports +5 days, typically six daily dates including today, with an endpoint
-that can be partially covered. It cannot supply eight complete days on that plan.
+that can be partially covered and is therefore excluded from daily selection. It cannot supply eight complete days on that plan.
 Use `tomorrow_forecast_days: 8` only on a supported plan. A rejected/failed Tomorrow
 request gracefully falls back to OpenWeather; it is not automatically retried with
 multiple shorter horizons. If OpenWeather fails, the response may have fewer than
@@ -166,6 +176,8 @@ least 5.5°C or POP differences of at least 0.5 (50 percentage points). These ar
 comparison diagnostics, not calibrated ensemble statistics; POP bases can differ.
 They neither modify selected values nor fail requests, and avoid noisy production
 logging. `extra.providerStatus` distinguishes `ok`, `failed`, and `disabled`.
+`extra.selectionPolicy` exposes the configured priority and disabled automatic switching.
+Daily `_providers[].period` and `.eligible` explain horizon exclusions.
 
 ### Cache times and failure behavior
 
@@ -184,16 +196,15 @@ readers seeing half-written JSON. Older cache files with naive UTC timestamps
 remain readable. No old provider payload is mixed into a newly generated response.
 
 Scheduler limits count attempts, including failures, and disable exhausted
-providers while allowing the other provider to continue. These are in-memory
-scheduler budgets: they reset on restart and do not count direct HTTP refreshes or
-city-geocoding calls. The per-location HTTP lock does not cover scheduled refreshes;
-forced refreshes can also run sequentially. Avoid polling `refresh=1`.
+providers while allowing the other provider to continue. These in-memory budgets
+reset on restart and exclude HTTP refreshes and city geocoding. Scheduled and
+HTTP refreshes can overlap. Avoid polling `refresh=1`.
 
 ### Validation and deployment
 
 ```bash
 python -m unittest discover -s tests -v
-python -m py_compile main.py cache.py scheduler.py weather.py
+python -m py_compile main.py cache.py scheduler.py weather.py timeutils.py
 ```
 
 The captured fixture in `tests/fixtures/forecast-2026-09-19.json` contains current

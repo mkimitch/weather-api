@@ -33,12 +33,13 @@ Thanks for your interest in contributing!
 
 ## Running checks
 
-This repo's CI currently performs a syntax check.
+CI runs the offline unittest suite and a Python syntax check. Tests must not call external services.
 
 Run the same check locally:
 
 ```bash
-python -m py_compile main.py cache.py scheduler.py weather.py
+python -m unittest discover -s tests -v
+python -m py_compile main.py cache.py scheduler.py weather.py timeutils.py
 ```
 
 ## Submitting a pull request

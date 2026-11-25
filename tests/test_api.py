@@ -22,11 +22,15 @@ class WeatherEndpointTest(unittest.TestCase):
         self.addCleanup(self.restore_cache)
         cache.init_cache({"cache_dir": self.directory.name})
         self.fixture = json.loads((Path(__file__).parent / "fixtures/forecast-2026-09-19.json").read_text())
-        self.config = {"locations": [{"name": "home", "type": "latlon", "lat": 44.62, "lon": -93.14}],
-                       "openweather_api_key": "test", "tomorrow_api_key": "test"}
+        self.config = {"locations": [{"name": "home", "type": "latlon", "lat": 44.62, "lon": -93.14, "timezone": "America/Chicago"}],
+                       "openweather_api_key": "test", "tomorrow_api_key": "test", "cache_dir": self.directory.name,
+                       "daily_provider_priority": ["tomorrow", "openweather"]}
         config_patch = patch.object(main, "config", self.config)
         config_patch.start()
         self.addCleanup(config_patch.stop)
+        clock_patch = patch.object(weather, "utcnow", return_value=datetime(2026, 9, 19, 12, tzinfo=timezone.utc))
+        clock_patch.start()
+        self.addCleanup(clock_patch.stop)
 
     def restore_cache(self):
         cache.CACHE_DIR, cache.CACHE_EXPIRY_MINUTES = self.old_cache
@@ -45,21 +49,22 @@ class WeatherEndpointTest(unittest.TestCase):
         self.assertEqual([d["date"] for d in response["daily"]], [f"2026-09-{day}" for day in range(19, 27)])
         self.assertEqual(sum("tomorrow" in d["_providers"] for d in response["daily"]), 6)
         self.assertEqual(len(response["daily"][1:8]), 7)
-        for day, upstream in zip(response["daily"], self.fixture["openweather"]["daily"]):
-            self.assertEqual(day["tempC"]["min"], upstream["temp"]["min"])
-            self.assertEqual(day["tempC"]["max"], upstream["temp"]["max"])
+        for day in response["daily"]:
+            source = "tomorrow" if day["date"] < "2026-09-24" else "openweather"
+            upstream = day["_providers"][source]
+            self.assertEqual(day["tempC"]["min"], upstream["tempC"]["min"])
+            self.assertEqual(day["tempC"]["max"], upstream["tempC"]["max"])
             self.assertLessEqual(day["tempC"]["min"], day["tempC"]["max"])
             self.assertEqual(day["pop"], upstream["pop"])
-            self.assertTrue(0 <= day["pop"] <= 1)
-            self.assertEqual(day["_sources"]["tempC"]["max"], "openweather")
+            self.assertEqual(day["_sources"]["tempC"]["max"], source)
         tomorrow = response["daily"][0]["_providers"]["tomorrow"]
         self.assertEqual(tomorrow["pop"], 0.095)
         self.assertEqual(tomorrow["extra"]["precipitationProbability"]["precipitationProbabilityMax"], 0.74)
         # Production WeatherCard uses Math.round(C * 9/5 + 32), round(POP * 100).
         day = response["daily"][1]
         self.assertEqual(round(day["tempC"]["max"] * 9 / 5 + 32), 66)
-        self.assertEqual(round(day["tempC"]["min"] * 9 / 5 + 32), 53)
-        self.assertEqual(round(day["pop"] * 100), 23)
+        self.assertEqual(round(day["tempC"]["min"] * 9 / 5 + 32), 54)
+        self.assertEqual(round(day["pop"] * 100), 0)
         self.assertTrue(response["extra"]["providerFetchedAt"]["openweather"])
         self.assertFalse(response["_cache"]["stale"])
         with patch.object(main, "get_weather_for_location") as fetch:
@@ -86,7 +91,7 @@ class WeatherEndpointTest(unittest.TestCase):
         with patch.object(weather, "fetch_openweather", side_effect=RuntimeError("unavailable")), \
              patch.object(weather, "fetch_tomorrow", return_value=self.fixture["tomorrow"]):
             response = json.loads(main.get_weather("home", refresh=1).body)
-        self.assertEqual(len(response["daily"]), 6)
+        self.assertEqual(len(response["daily"]), 5)
         self.assertEqual(response["daily"][0]["date"], "2026-09-19")
         self.assertEqual(response["daily"][0]["_sources"]["pop"], "tomorrow")
         self.assertIsNone(response["extra"]["providerFetchedAt"]["openweather"])
