@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from datetime import timedelta
 from pathlib import Path
 
+from conditions import TOMORROW_CONDITION_FIELDS
 from timeutils import day_bounds, instant, local_noon, utcnow
 
 SCHEMA_VERSION = 2
@@ -136,7 +137,7 @@ OWM_FIELDS = {"dt", "temp", "feels_like", "humidity", "dew_point", "pressure", "
 TOMORROW_FIELDS = {"temperature", "temperatureMin", "temperatureMax", "temperatureApparent", "humidity",
                    "dewPoint", "pressureSurfaceLevel", "windSpeed", "windGust", "windDirection", "visibility",
                    "uvIndex", "cloudCover", "precipitationProbability", "precipitationProbabilityAvg",
-                   "precipitationProbabilityMax", "rainIntensity", "snowIntensity", "sleetIntensity", "weatherCode"}
+                   "precipitationProbabilityMax", "rainIntensity", "snowIntensity", "sleetIntensity", *TOMORROW_CONDITION_FIELDS}
 
 
 def raw_weather(provider, raw):
@@ -156,6 +157,18 @@ def known_timezone(config, location):
         return row[0] if row else None
 
 
+def archive_daily_record(day):
+    # The selected conditions and raw provider data already retain these exact copies.
+    candidates = day.get("_conditionCandidates")
+    if candidates is None:
+        return day
+    selected = day.get("conditions", {}).values()
+    return {**day, "_conditionCandidates": {
+        field: condition for field, condition in candidates.items()
+        if condition is not None and condition not in selected
+    }}
+
+
 def record_forecast(config, location, provider, raw, normalized):
     if not config.get("history_enabled", True):
         return
@@ -163,8 +176,9 @@ def record_forecast(config, location, provider, raw, normalized):
     zone = normalized.get("timezone") or location.get("timezone")
     identity = location_identity(location, zone)
     response_id = hashlib.sha256(encode([identity, provider, retrieved]).encode()).hexdigest()
+    days = [archive_daily_record(day) for day in normalized.get("daily", [])]
     payload = {"originalUnits": "metric", "normalizedUnits": {"temperature": "C", "wind": "km/h", "precipitation": "mm"},
-               "raw": raw_weather(provider, raw), "normalized": normalized,
+               "raw": raw_weather(provider, raw), "normalized": {**normalized, "daily": days},
                "issuance": "unknown; retrieved_at is the time this service obtained the prediction"}
     with database(config) as db:
         db.execute("INSERT OR IGNORE INTO responses VALUES(?,?,?,?,?,?,?,?,?,?,?)",
@@ -172,7 +186,7 @@ def record_forecast(config, location, provider, raw, normalized):
                     "OWM One Call 3.0" if provider == "openweather" else "Tomorrow Timelines v4",
                     zone, location.get("lat"), location.get("lon"), zlib.compress(encode(payload).encode())))
         hours = {h.get("time"): h for h in normalized.get("hourly", [])}
-        for day in normalized.get("daily", []):
+        for day in days:
             start, end = day_bounds(day["date"], zone) if zone else (None, None)
             data = dict(day)
             # A defined instant supports wind comparison without assuming daily wind is a mean.

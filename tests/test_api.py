@@ -56,7 +56,8 @@ class WeatherEndpointTest(unittest.TestCase):
             self.assertEqual(day["tempC"]["min"], upstream["tempC"]["min"])
             self.assertEqual(day["tempC"]["max"], upstream["tempC"]["max"])
             self.assertLessEqual(day["tempC"]["min"], day["tempC"]["max"])
-            self.assertEqual(day["pop"], upstream["pop"])
+            self.assertEqual(day["pop"], day["_providers"]["openweather"]["pop"])
+            self.assertEqual(day["_sources"]["pop"], "openweather")
             self.assertEqual(day["_sources"]["tempC"]["max"], source)
         tomorrow = response["daily"][0]["_providers"]["tomorrow"]
         self.assertEqual(tomorrow["pop"], 0.095)
@@ -65,7 +66,7 @@ class WeatherEndpointTest(unittest.TestCase):
         day = response["daily"][1]
         self.assertEqual(round(day["tempC"]["max"] * 9 / 5 + 32), 66)
         self.assertEqual(round(day["tempC"]["min"] * 9 / 5 + 32), 54)
-        self.assertEqual(round(day["pop"] * 100), 0)
+        self.assertEqual(round(day["pop"] * 100), 23)
         self.assertTrue(response["extra"]["providerFetchedAt"]["openweather"])
         self.assertFalse(response["_cache"]["stale"])
         with patch.object(main, "get_weather_for_location") as fetch:
