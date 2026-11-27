@@ -1,9 +1,10 @@
 import logging
 import threading
 import time
+from contextlib import nullcontext
 from typing import Dict
 
-from cache import init_cache
+from cache import init_cache, refresh_lock
 from weather import get_weather_for_location, RateLimitExceeded
 from observations import collect_observations
 from history import claim_job, finish_job, prune
@@ -21,8 +22,10 @@ class WeatherScheduler:
         init_cache(config)
 
     def refresh_location(self, loc):
-        # The fetch path owns durable budgets, shared with HTTP refreshes.
-        return get_weather_for_location(loc, self.config)
+        # Controlled locations coordinate cache writes with the HTTP refresh path.
+        lock = refresh_lock(loc["name"]) if loc.get("tomorrow_rich_conditions_control_file") else nullcontext()
+        with lock:
+            return get_weather_for_location(loc, self.config, scheduled=True)
 
     def scheduler_loop(self):
         """Background loop: fetch merged weather for each location at interval."""

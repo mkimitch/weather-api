@@ -1,7 +1,6 @@
 import os
-import threading
 import time
-from typing import Dict, Optional
+from typing import Optional
 
 import yaml
 from fastapi import FastAPI, HTTPException, Query
@@ -9,7 +8,7 @@ from fastapi.responses import JSONResponse
 import uvicorn
 from zoneinfo import ZoneInfo
 
-from cache import get_cached_weather, get_cache_meta, read_cached_payload, cached_response
+from cache import get_cached_weather, get_cache_meta, read_cached_payload, cached_response, refresh_lock
 from scheduler import start_scheduler
 from weather import get_weather_for_location, daily_priority
 from history import health as history_health
@@ -50,21 +49,7 @@ config = load_config()
 app = FastAPI(title="Weather API Caching Proxy (Merged OWM + Tomorrow.io)")
 _app_started_at = time.time()
 
-# A simple in-process lock per location to coalesce concurrent refreshes
-_location_locks: Dict[str, threading.Lock] = {}
-_location_locks_guard = threading.Lock()  # protects the dict itself
-
-
-def _get_lock_for(location_name: str) -> threading.Lock:
-    with _location_locks_guard:
-        lock = _location_locks.get(location_name)
-        if lock is None:
-            lock = threading.Lock()
-            _location_locks[location_name] = lock
-        return lock
-
-
-def _find_location_in_config(name: str) -> Optional[Dict]:
+def _find_location_in_config(name: str) -> Optional[dict]:
     for loc in config.get("locations", []):
         if loc.get("name") == name:
             return loc
@@ -140,7 +125,7 @@ def get_weather(
         return JSONResponse(content=data)
 
     # 2) Coalesced refresh path
-    lock = _get_lock_for(location_name)
+    lock = refresh_lock(location_name)
     acquired = lock.acquire(timeout=30)  # avoid deadlock; tweak as needed
     if not acquired:
         # Fallback: serve whatever is currently cached

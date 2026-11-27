@@ -111,6 +111,7 @@ In addition to provider keys and `locations`, `config.yaml` supports:
 - `units`: legacy setting, ignored; upstream requests and normalization always use metric
 - `tomorrow_forecast_days`: default 5; use 8 only with an eligible plan (range 1–14)
 - optional `locations[].timezone`: IANA name, e.g. `America/Chicago`
+- optional `locations[].tomorrow_rich_conditions_control_file` for a scheduled canary. [Acquisition runbook](docs/tomorrow-rich-condition-acquisition.md)
 - `cache_dir`, `cache_expiry_minutes`
 - `refresh_interval_minutes`
 - `max_calls_per_24h_openweather`, `max_calls_per_24h_tomorrow`

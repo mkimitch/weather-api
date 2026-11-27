@@ -14,6 +14,7 @@ import logging
 import os
 import math
 import sqlite3
+from contextlib import ExitStack
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
@@ -27,7 +28,11 @@ from conditions import (
     openweather_condition, selectable, text_value, tomorrow_condition,
 )
 from precipitation import DAILY_POP_RANK, compare_probability, covers_time, probability_period
-from history import finish_attempt, known_timezone, location_identity, record_forecast, reserve_attempt
+from history import (finish_attempt, known_timezone, location_identity, record_forecast,
+                     release_tomorrow_activation, reserve_attempt)
+from tomorrow_acquisition import (BASE_FIELDS as TOMORROW_BASE_FIELDS, control_directory,
+                                  filter_rich_values, inspect_acquisition,
+                                  prepare_acquisition, read_control, logger as tomorrow_acquisition_logger)
 
 # --- Endpoints ---
 ONECALL_URL = "https://api.openweathermap.org/data/3.0/onecall"
@@ -86,7 +91,7 @@ def fetch_openweather(
 # ----------------------
 def fetch_tomorrow(
     lat: float, lon: float, api_key: str, *, units: str = "metric",
-    timezone_name: str = "auto", forecast_days: int = 5,
+    timezone_name: str = "auto", forecast_days: int = 5, rich_conditions: bool = False,
 ) -> Dict[str, Any]:
     """
     Fetch Tomorrow.io v4 hourly+daily Timelines in a single POST.
@@ -96,28 +101,9 @@ def fetch_tomorrow(
     require_metric(units)
     if not isinstance(forecast_days, int) or not 1 <= forecast_days <= 14:
         raise ValueError("tomorrow_forecast_days must be an integer from 1 to 14")
-    fields = [
-        "temperature",
-        "temperatureApparent",
-        "humidity",
-        "dewPoint",
-        "pressureSurfaceLevel",
-        "windSpeed",
-        "windGust",
-        "windDirection",
-        "visibility",
-        "uvIndex",
-        "cloudCover",
-        "precipitationProbability",
-        "precipitationProbabilityAvg",
-        "precipitationProbabilityMax",
-        "rainIntensity",
-        "snowIntensity",
-        "sleetIntensity",
-        "weatherCode",
-        "temperatureMin",
-        "temperatureMax",
-    ]
+    fields = list(TOMORROW_BASE_FIELDS)
+    if rich_conditions:
+        fields.extend(TOMORROW_SOLAR_FIELDS)
     body = {
         "location": [lat, lon],
         "fields": fields,
@@ -139,9 +125,12 @@ def fetch_tomorrow(
             "apikey": api_key,
         },
         timeout=12,
+        allow_redirects=False,
     )
     # Do not log error bodies or request URLs: they can contain credentials.
     resp.raise_for_status()
+    if 300 <= resp.status_code < 400:
+        raise requests.HTTPError(response=resp)
     return resp.json()
 
 
@@ -886,13 +875,28 @@ def has_weather(data: Dict[str, Any]) -> bool:
 def record_attempt_outcome(config, attempt, status, normalized=None):
     try:
         finish_attempt(config, attempt, status, normalized)
+        return True
     except Exception as error:
         # The quota reservation is already durable, even if this row stays pending.
         logger.error("Request outcome write failed (attempt %s, %s)", attempt, type(error).__name__)
+        return False
+
+
+def normalize_tomorrow_response(raw, timezone_name, fetched_at, request_start, horizon_end):
+    forecast = normalize_tomorrow(raw, timezone_name=timezone_name, fetched_at=fetched_at)
+    timeline_ends = [instant(t["endTime"]) for t in (raw.get("data") or {}).get("timelines", [])
+                     if t.get("timestep") == "1d" and t.get("endTime")]
+    if timeline_ends:
+        horizon_end = min(horizon_end, min(timeline_ends))
+    annotate_daily(forecast["daily"], "tomorrow", timezone_name, request_start, horizon_end)
+    if not timezone_name:
+        for day in forecast["daily"]:
+            day["_period"] = {"complete": False, "basis": "unknown_timezone"}
+    return forecast
 
 
 def get_weather_for_location(
-    location: Dict[str, Any], config: Dict[str, Any]
+    location: Dict[str, Any], config: Dict[str, Any], *, scheduled: bool = False,
 ) -> Dict[str, Any]:
     """
     Fetch and cache MERGED weather for a location (city or lat/lon) using both providers.
@@ -978,52 +982,73 @@ def get_weather_for_location(
     else:
         if enabled_tmr and attempt_tmr is None:
             status["tomorrow"] = "rate_limited"
-    if attempt_tmr is not None:
-        try:
-            request_start = utcnow()
-            tmr_raw = fetch_tomorrow(lat, lon, tmr_key, units=units,
-                                     timezone_name=timezone_name or "auto",
-                                     forecast_days=config.get("tomorrow_forecast_days", 5))
-            fetched_at = utcnow().isoformat()
-            candidate = normalize_tomorrow(tmr_raw, timezone_name=timezone_name, fetched_at=fetched_at)
-            horizon_end = request_start + timedelta(days=config.get("tomorrow_forecast_days", 5))
-            timeline_ends = [instant(t["endTime"]) for t in (tmr_raw.get("data") or {}).get("timelines", [])
-                             if t.get("timestep") == "1d" and t.get("endTime")]
-            if timeline_ends:
-                horizon_end = min(horizon_end, min(timeline_ends))
-            annotate_daily(candidate["daily"], "tomorrow", timezone_name, request_start, horizon_end)
-            if not timezone_name:
-                for day in candidate["daily"]:
-                    day["_period"] = {"complete": False, "basis": "unknown_timezone"}
-            if not has_weather(candidate):
-                raise ValueError("Empty Tomorrow forecast")
-        except Exception as e:
-            status["tomorrow"] = "failed"
-            record_attempt_outcome(config, attempt_tmr, "failed")
-            logger.warning("Tomorrow.io fetch failed for %s (%s, HTTP %s)",
-                           location["name"], type(e).__name__, getattr(getattr(e, "response", None), "status_code", None))
-        else:
-            tmr_uni = candidate
-            status["tomorrow"] = "ok"
-            record_attempt_outcome(config, attempt_tmr, "ok", candidate)
+    with ExitStack() as publication:
+        rich_control = None
+        rich_published = False
+        outcome_recorded = False
+        if attempt_tmr is not None:
             try:
-                record_forecast(config, archive_location, "tomorrow", tmr_raw, candidate)
-                archive_status["tomorrow"] = "stored" if config.get("history_enabled", True) else "disabled"
-            except Exception as archive_error:
-                archive_status["tomorrow"] = "failed"
-                logger.error("Forecast archive failed (%s)", type(archive_error).__name__)
+                request_start = utcnow()
+                forecast_days = config.get("tomorrow_forecast_days", 5)
+                control_path = location.get("tomorrow_rich_conditions_control_file") if scheduled else None
+                rich_control, baseline = prepare_acquisition(
+                    config, archive_location, timezone_name, request_start, control_path, attempt_tmr)
+                tmr_raw = fetch_tomorrow(lat, lon, tmr_key, units=units,
+                                         timezone_name=timezone_name or "auto",
+                                         forecast_days=forecast_days, **({"rich_conditions": True} if rich_control else {}))
+                fetched_at = utcnow().isoformat()
+                horizon_end = request_start + timedelta(days=forecast_days)
+                if rich_control:
+                    inspection = inspect_acquisition(tmr_raw, baseline, request_start, horizon_end, timezone_name)
+                    tomorrow_acquisition_logger.info("Rich acquisition %s: %s", rich_control.mode, inspection)
+                    if inspection["baselineIssues"]:
+                        raise ValueError("Expanded Timelines failed baseline coverage")
+                    if rich_control.mode == "publish" and inspection["publishable"]:
+                        # Hold the operator lock across the final check and both writes.
+                        guarded = publication.enter_context(control_directory(control_path))
+                        rich_published = read_control(guarded) == rich_control
+                    filter_rich_values(tmr_raw, publish=rich_published)
+                candidate = normalize_tomorrow_response(tmr_raw, timezone_name, fetched_at, request_start, horizon_end)
+                if not has_weather(candidate):
+                    raise ValueError("Empty Tomorrow forecast")
+            except Exception as e:
+                status["tomorrow"] = "failed"
+                record_attempt_outcome(config, attempt_tmr, "failed")
+                logger.warning("Tomorrow.io fetch failed for %s (%s, HTTP %s)",
+                               location["name"], type(e).__name__, getattr(getattr(e, "response", None), "status_code", None))
+            else:
+                tmr_uni = candidate
+                status["tomorrow"] = "ok"
+                outcome_recorded = record_attempt_outcome(config, attempt_tmr, "ok", candidate)
+                try:
+                    record_forecast(config, archive_location, "tomorrow", tmr_raw, candidate)
+                    archive_status["tomorrow"] = "stored" if config.get("history_enabled", True) else "disabled"
+                except Exception as archive_error:
+                    archive_status["tomorrow"] = "failed"
+                    logger.error("Forecast archive failed (%s)", type(archive_error).__name__)
+                if rich_published and (archive_status["tomorrow"] != "stored" or read_control(guarded) != rich_control):
+                    # Keep usable generic data even if publication loses its archive or control.
+                    filter_rich_values(tmr_raw, publish=False)
+                    tmr_uni = normalize_tomorrow_response(tmr_raw, timezone_name, fetched_at, request_start, horizon_end)
+                    rich_published = False
 
-    if not owm_uni and not tmr_uni:
-        # Both providers failed; let caller decide how to handle (usually serve stale cache)
-        raise RuntimeError(
-            f"All providers failed for {location['name']} (lat={lat}, lon={lon})."
-        )
+        if not owm_uni and not tmr_uni:
+            # Both providers failed; let caller decide how to handle (usually serve stale cache)
+            raise RuntimeError(
+                f"All providers failed for {location['name']} (lat={lat}, lon={lon})."
+            )
 
-    merged = merge_weather(owm_uni or {}, tmr_uni or {}, config)
-    if not has_weather(merged):
-        raise RuntimeError("No eligible weather to cache.")
-    merged["lat"], merged["lon"] = lat, lon
-    merged["timezone"] = timezone_name or merged.get("timezone")
-    merged["extra"]["providerStatus"] = status
-    merged["extra"]["historyStatus"] = archive_status
-    return save_weather(location["name"], merged)
+        merged = merge_weather(owm_uni or {}, tmr_uni or {}, config)
+        if not has_weather(merged):
+            raise RuntimeError("No eligible weather to cache.")
+        merged["lat"], merged["lon"] = lat, lon
+        merged["timezone"] = timezone_name or merged.get("timezone")
+        merged["extra"]["providerStatus"] = status
+        merged["extra"]["historyStatus"] = archive_status
+        result = save_weather(location["name"], merged)
+        if rich_published and outcome_recorded and read_control(guarded) == rich_control:
+            try:
+                release_tomorrow_activation(config, location["name"], rich_control.token, attempt_tmr)
+            except (OSError, sqlite3.Error):
+                tomorrow_acquisition_logger.warning("Rich acquisition remains disarmed after control write failed")
+        return result

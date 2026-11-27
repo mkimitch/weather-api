@@ -32,6 +32,8 @@ locations:
     type: "city"
     query: "Chicago,US"
     timezone: "America/Chicago" # recommended, especially for Tomorrow-only operation
+    # Optional runtime control path for scheduled rich Tomorrow.io conditions. Missing means off.
+    # tomorrow_rich_conditions_control_file: "/app/weather_cache/tomorrow-control/chicago.control"
     # Optional regional observation proxy. Enable with an NWS contact User-Agent.
     # observation_station: "KORD"
   # By latitude/longitude

@@ -1,0 +1,78 @@
+{
+  "generic": {
+    "upstreamJson": 68234,
+    "upstreamGzipEstimate": 1546,
+    "apiJson": 346277,
+    "apiGzipEstimate": 8533,
+    "cacheJson": 346224,
+    "archiveBlob": 6528,
+    "archiveDailyRows": 9746,
+    "archiveLogicalTotal": 16274
+  },
+  "daily-only": {
+    "total": {
+      "upstreamJson": 68678,
+      "upstreamGzipEstimate": 1635,
+      "apiJson": 369190,
+      "apiGzipEstimate": 9373,
+      "cacheJson": 369137,
+      "archiveBlob": 7253,
+      "archiveDailyRows": 19942,
+      "archiveLogicalTotal": 27195
+    },
+    "increase": {
+      "upstreamJson": 444,
+      "upstreamGzipEstimate": 89,
+      "apiJson": 22913,
+      "apiGzipEstimate": 840,
+      "cacheJson": 22913,
+      "archiveBlob": 725,
+      "archiveDailyRows": 10196,
+      "archiveLogicalTotal": 10921
+    }
+  },
+  "hourly-null": {
+    "total": {
+      "upstreamJson": 77318,
+      "upstreamGzipEstimate": 1709,
+      "apiJson": 369190,
+      "apiGzipEstimate": 9373,
+      "cacheJson": 369137,
+      "archiveBlob": 7418,
+      "archiveDailyRows": 19942,
+      "archiveLogicalTotal": 27360
+    },
+    "increase": {
+      "upstreamJson": 9084,
+      "upstreamGzipEstimate": 163,
+      "apiJson": 22913,
+      "apiGzipEstimate": 840,
+      "cacheJson": 22913,
+      "archiveBlob": 890,
+      "archiveDailyRows": 10196,
+      "archiveLogicalTotal": 11086
+    }
+  },
+  "hourly-populated": {
+    "total": {
+      "upstreamJson": 77558,
+      "upstreamGzipEstimate": 1791,
+      "apiJson": 369190,
+      "apiGzipEstimate": 9373,
+      "cacheJson": 369137,
+      "archiveBlob": 7600,
+      "archiveDailyRows": 19942,
+      "archiveLogicalTotal": 27542
+    },
+    "increase": {
+      "upstreamJson": 9324,
+      "upstreamGzipEstimate": 245,
+      "apiJson": 22913,
+      "apiGzipEstimate": 840,
+      "cacheJson": 22913,
+      "archiveBlob": 1072,
+      "archiveDailyRows": 10196,
+      "archiveLogicalTotal": 11268
+    }
+  }
+}

@@ -1,10 +1,21 @@
 import os
 import json
 import tempfile
+import threading
 from datetime import datetime, timezone
 
 CACHE_DIR = None
 CACHE_EXPIRY_MINUTES = 30
+_refresh_locks = {}
+_refresh_locks_guard = threading.Lock()
+
+
+def refresh_lock(location_name):
+    with _refresh_locks_guard:
+        lock = _refresh_locks.get(location_name)
+        if lock is None:
+            lock = _refresh_locks[location_name] = threading.Lock()
+        return lock
 
 
 def init_cache(config):
