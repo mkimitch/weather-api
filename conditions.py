@@ -21,6 +21,12 @@ OWM_ICONS = {f"{code}{light}" for code in ("01", "02", "03", "04", "09", "10", "
              for light in ("d", "n")}
 
 
+def tomorrow_code_mapping(field, code):
+    if type(code) is not int:
+        return {}
+    return CATALOGS["tomorrow"]["conditionsByField"].get(field, {}).get(str(code), {})
+
+
 def coverage(basis, start=None, end=None, local_date=None):
     return {"basis": basis, "start": start, "end": end, "localDate": local_date}
 
@@ -50,15 +56,15 @@ def build_condition(provider, context, native, period, *, timestep, data_kind, f
                     source_time, cloud_percent=None):
     if not native:
         return None
-    catalog = CATALOGS[provider]["conditions"]
     cloud, phenomena, descriptions, mappings = [], [], [], []
     mixed_cloud = False
     light = None
     for index, evidence in enumerate(native):
         code = evidence["code"]
-        entry = catalog.get(str(code), {}) if type(code) is int else {}
-        if entry.get("nativeField", evidence["field"]) != evidence["field"]:
-            entry = {}
+        if provider == "tomorrow":
+            entry = tomorrow_code_mapping(evidence["field"], code)
+        else:
+            entry = CATALOGS[provider]["conditions"].get(str(code), {}) if type(code) is int else {}
         status = entry.get("status", "known" if entry else "unknown")
         mappings.append(status)
         mixed_cloud = mixed_cloud or entry.get("mixedCloudCover", False)

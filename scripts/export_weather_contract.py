@@ -14,19 +14,16 @@ DATE = "2026-11-01"
 
 
 def rows():
-    for provider, catalog in CATALOGS.items():
-        for code in sorted(map(int, catalog["conditions"])):
-            field = catalog["conditions"][str(code)].get("nativeField")
-            if provider == "openweather":
-                condition = openweather_condition({"weather": [{"id": code}]}, "hourly", TIME, TIME)
-            elif field:
+    for code in sorted(map(int, CATALOGS["openweather"]["conditions"])):
+        yield openweather_condition({"weather": [{"id": code}]}, "hourly", TIME, TIME)
+    for field, codes in CATALOGS["tomorrow"]["conditionsByField"].items():
+        for code in sorted(map(int, codes)):
+            if field in TOMORROW_SOLAR_FIELDS:
                 context, basis = TOMORROW_SOLAR_FIELDS[field]
-                condition = tomorrow_condition({field: code}, field, context, coverage(basis, local_date=DATE),
-                                               TIME, TIME, "1d")
+                yield tomorrow_condition({field: code}, field, context, coverage(basis, local_date=DATE),
+                                         TIME, TIME, "1d")
             else:
-                condition = tomorrow_condition({"weatherCode": code}, "weatherCode", "hourly",
-                                               interval_coverage(TIME), TIME, TIME, "1h")
-            yield condition
+                yield tomorrow_condition({field: code}, field, "hourly", interval_coverage(TIME), TIME, TIME, "1h")
     yield openweather_condition({"weather": [{"id": 511}, {"id": 615}, {"id": 741}]},
                                "current", TIME, TIME)
     yield openweather_condition({"weather": [{"id": 801}, {"id": 802}]},
