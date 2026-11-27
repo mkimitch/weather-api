@@ -157,6 +157,43 @@ def known_timezone(config, location):
         return row[0] if row else None
 
 
+def recent_tomorrow_raw(config, location, zone, now):
+    cutoff = now - timedelta(minutes=config.get("daily_max_age_minutes", 90))
+    with database(config) as db:
+        row = db.execute("SELECT payload FROM responses WHERE identity=? AND provider='tomorrow' "
+                         "AND retrieved_at>=? AND retrieved_at<=? ORDER BY retrieved_at DESC LIMIT 1",
+                         (location_identity(location, zone), cutoff.isoformat(), now.isoformat())).fetchone()
+    if row is None:
+        return None
+    try:
+        payload = json.loads(zlib.decompress(row[0]))
+    except zlib.error as error:
+        raise ValueError("Corrupt Tomorrow.io forecast archive") from error
+    if not isinstance(payload, dict) or "raw" not in payload:
+        raise ValueError("Invalid Tomorrow.io forecast archive")
+    return payload["raw"]
+
+
+def tomorrow_activation_job(location, token):
+    return "tomorrow_rich:" + hashlib.sha256(encode([location, token]).encode()).hexdigest()
+
+
+def claim_tomorrow_activation(config, location, token, attempt, now):
+    """Claim one expanded attempt. A crash, failed gate or observation leaves it disarmed."""
+    with database(config) as db:
+        result = db.execute(
+            "INSERT INTO jobs(name,attempted_at,status,detail) VALUES(?,?,'claimed',?) "
+            "ON CONFLICT(name) DO NOTHING",
+            (tomorrow_activation_job(location, token), now.isoformat(), str(attempt)))
+        return result.rowcount == 1
+
+
+def release_tomorrow_activation(config, location, token, attempt):
+    """Rearm only the claim that completed this publication."""
+    with database(config) as db:
+        db.execute("DELETE FROM jobs WHERE name=? AND detail=?", (tomorrow_activation_job(location, token), str(attempt)))
+
+
 def archive_daily_record(day):
     # The selected conditions and raw provider data already retain these exact copies.
     candidates = day.get("_conditionCandidates")
@@ -234,6 +271,6 @@ def health(config):
     with database(config) as db:
         return {"schemaVersion": SCHEMA_VERSION, "enabled": config.get("history_enabled", True),
                 "automaticSwitching": False,
-                "jobs": [dict(r) for r in db.execute("SELECT * FROM jobs")],
+                "jobs": [dict(r) for r in db.execute("SELECT * FROM jobs WHERE name NOT GLOB 'tomorrow_rich:*'")],
                 "latestForecast": db.execute("SELECT MAX(retrieved_at) FROM responses").fetchone()[0],
                 "latestObservation": db.execute("SELECT MAX(time) FROM observations").fetchone()[0]}

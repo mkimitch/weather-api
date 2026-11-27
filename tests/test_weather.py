@@ -22,6 +22,7 @@ class ProbabilityNormalizationTest(unittest.TestCase):
 
         class FakeResponse:
             ok = True
+            status_code = 200
 
             def raise_for_status(self):
                 pass
@@ -29,7 +30,7 @@ class ProbabilityNormalizationTest(unittest.TestCase):
             def json(self):
                 return {"data": {"timelines": []}}
 
-        def fake_post(url, json, headers, timeout):
+        def fake_post(url, json, headers, timeout, allow_redirects):
             captured.update(json)
             return FakeResponse()
 
