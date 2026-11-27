@@ -79,16 +79,74 @@ class ProviderConditionSemanticsTest(unittest.TestCase):
                     self.assertEqual(candidate["status"], "unknown")
                     self.assertTrue(all(condition is None for condition in merged["conditions"].values()))
 
-    def test_tomorrow_artwork_only_wintry_mix_keeps_components_unknown(self):
+    def test_tomorrow_documented_mixes_keep_distinct_components(self):
         raw = tomorrow_timeline("1d", {"weatherCodeDay": 51080, "cloudCover": 60})
         condition = normalize_tomorrow(raw)["daily"][0]["conditions"]["daytime"]
-        self.assertEqual(condition["status"], "partial")
+        self.assertEqual(condition["status"], "known")
         self.assertEqual(condition["phenomena"], [
-            {"kind": "mixed_precipitation", "intensity": None, "qualifiers": [], "evidenceIndex": 0}
+            {"kind": "rain", "intensity": None, "qualifiers": [], "evidenceIndex": 0},
+            {"kind": "snow", "intensity": None, "qualifiers": [], "evidenceIndex": 0},
         ])
         self.assertEqual(condition["cloudCover"], {"classes": [], "mixed": False, "percent": None})
         self.assertEqual(condition["period"]["basis"], "sunrise_to_sunset")
         self.assertEqual(condition["source"]["native"], [{"field": "weatherCodeDay", "code": 51080}])
+
+    def test_tomorrow_full_day_and_night_catalog_cases(self):
+        for field, context, code, classes, expected in (
+            ("weatherCodeFullDay", "fullDay", 2101, ["mostly_clear"], [("fog", "light")]),
+            ("weatherCodeFullDay", "fullDay", 5122, [], [("drizzle", None), ("snow", "light")]),
+            ("weatherCodeFullDay", "fullDay", 6214, ["partly_cloudy"], [("freezing_rain", None)]),
+            ("weatherCodeFullDay", "fullDay", 8001, ["mostly_clear"], [("thunderstorm", None)]),
+            ("weatherCodeDay", "daytime", 51100, [], [("drizzle", None), ("snow", None)]),
+            ("weatherCodeDay", "daytime", 51120, [], [("snow", None), ("ice_pellets", None)]),
+            ("weatherCodeDay", "daytime", 51140, [], [("snow", None), ("freezing_rain", None)]),
+            ("weatherCodeDay", "daytime", 51220, [], [("drizzle", None), ("snow", "light")]),
+            ("weatherCodeDay", "daytime", 62040, [], [("drizzle", None), ("freezing_drizzle", None)]),
+            ("weatherCodeDay", "daytime", 62060, [], [("rain", "light"), ("freezing_drizzle", None)]),
+            ("weatherCodeDay", "daytime", 62120, [], [("drizzle", None), ("freezing_rain", None)]),
+            ("weatherCodeDay", "daytime", 62200, [], [("rain", "light"), ("freezing_rain", None)]),
+            ("weatherCodeDay", "daytime", 62220, [], [("rain", None), ("freezing_rain", None)]),
+            ("weatherCodeDay", "daytime", 60000, [], [("freezing_drizzle", None)]),
+            ("weatherCodeDay", "daytime", 60020, ["partly_cloudy"], [("freezing_drizzle", None)]),
+            ("weatherCodeDay", "daytime", 60030, ["mostly_clear"], [("freezing_drizzle", None)]),
+            ("weatherCodeDay", "daytime", 60040, ["mostly_cloudy"], [("freezing_drizzle", None)]),
+            ("weatherCodeDay", "daytime", 71030, [], [("freezing_rain", None), ("ice_pellets", "heavy")]),
+            ("weatherCodeDay", "daytime", 71050, [], [("drizzle", None), ("ice_pellets", None)]),
+            ("weatherCodeDay", "daytime", 71060, [], [("freezing_rain", None), ("ice_pellets", None)]),
+            ("weatherCodeDay", "daytime", 71150, [], [("rain", "light"), ("ice_pellets", None)]),
+            ("weatherCodeDay", "daytime", 71170, [], [("rain", None), ("ice_pellets", None)]),
+            ("weatherCodeNight", "nighttime", 10011, ["cloudy"], []),
+            ("weatherCodeNight", "nighttime", 60021, ["partly_cloudy"], [("freezing_drizzle", None)]),
+            ("weatherCodeNight", "nighttime", 60031, ["mostly_clear"], [("freezing_drizzle", None)]),
+            ("weatherCodeNight", "nighttime", 60041, ["mostly_cloudy"], [("freezing_drizzle", None)]),
+            ("weatherCodeNight", "nighttime", 71031, [], [("freezing_rain", None), ("ice_pellets", "heavy")]),
+            ("weatherCodeNight", "nighttime", 51121, [], [("snow", None), ("ice_pellets", None)]),
+        ):
+            with self.subTest(field=field, code=code):
+                row = normalize_tomorrow(tomorrow_timeline("1d", {field: code}))["daily"][0]["conditions"][context]
+                self.assertEqual(row["status"], "known")
+                self.assertEqual(row["cloudCover"]["classes"], classes)
+                self.assertEqual([(event["kind"], event["intensity"]) for event in row["phenomena"]], expected)
+                self.assertEqual(row["source"]["native"], [{"field": field, "code": code}])
+
+    def test_tomorrow_checks_exact_field_and_keeps_disputed_or_unverified_evidence(self):
+        cases = {
+            "weatherCode": (10000, 2101, 3000, 3001, 3002, 80001, 0),
+            "weatherCodeFullDay": (6200, 10000, 0),
+            "weatherCodeDay": (62000, 1000, 10011, 0),
+            "weatherCodeNight": (62001, 1000, 10010, 0),
+        }
+        for field, codes in cases.items():
+            for code in codes:
+                with self.subTest(field=field, code=code):
+                    row = normalize_tomorrow(tomorrow_timeline("1d", {field: code}))["daily"][0]
+                    condition = row["_conditionCandidates"][field]
+                    self.assertEqual(condition["status"], "unknown")
+                    self.assertEqual(condition["source"]["native"], [{"field": field, "code": code}])
+                    self.assertEqual(condition["phenomena"], [])
+        row = normalize_tomorrow(tomorrow_timeline("1d", {"weatherCode": 6200, "weatherCodeFullDay": 6200}))["daily"][0]
+        self.assertEqual(row["conditions"]["fullDay"]["phenomena"][0]["kind"], "freezing_rain")
+        self.assertEqual(row["conditions"]["fullDay"]["source"]["native"], [{"field": "weatherCode", "code": 6200}])
 
     def test_tomorrow_current_and_minute_keep_valid_same_record_cloud_cover(self):
         for timestep, kind in (("current", "unknown"), ("1m", "forecast")):
