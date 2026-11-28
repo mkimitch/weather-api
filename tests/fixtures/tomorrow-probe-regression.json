@@ -1,0 +1,19 @@
+{
+  "source": "Observed catalog IDs and coverage cases from an isolated Free-tier Timelines probe. Replay timestamps, code order and weather values are synthetic.",
+  "hourlyCount": 121,
+  "hourlyUvCount": 107,
+  "hourlyCodeSets": {
+    "weatherCode": [1000, 1001, 1100, 1101, 1102, 4200],
+    "weatherCodeFullDay": [1000, 1001, 1100, 1101, 1102, 4200],
+    "weatherCodeDay": [10000, 10010, 11000, 11010, 11020],
+    "weatherCodeNight": [10001, 10011, 11001, 11011, 11021, 42001]
+  },
+  "dailyCodeSets": {
+    "weatherCode": [1000, 1001],
+    "weatherCodeFullDay": [1000, 1001],
+    "weatherCodeDay": [10000, 10010],
+    "weatherCodeNight": [10001, 10011, 11031]
+  },
+  "interiorNightCodeCounts": {"10011": 3, "11031": 1},
+  "boundaryNightCode": 10001
+}
